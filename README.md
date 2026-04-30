@@ -11,6 +11,7 @@ Private workspace for RootRecord web stacks: **Cloudflare Workers** (primary API
 | `cloudflare/shared` | Shared TS modules (password verify, billing, app associations, etc.) |
 | `solana/solanasite` | Next.js 14 app (`pnpm`) |
 | `solana/HELE` | Token / ops notes (`README.md`; local `.env` is gitignored) |
+| `main` | **rootrecord.info** Cloudflare Pages site (static HTML + `functions/`; `wrangler pages deploy`) |
 
 Worker source of truth for the primary API is **`cloudflare/rootrecord-primary`**. A copy under `solana/solanasite/cloudflare/` is intentionally **not** tracked (install deps locally; use the canonical tree above).
 
@@ -54,6 +55,16 @@ cd solana/solanasite
 pnpm install
 pnpm dev
 ```
+
+### Install & run — marketing site (Pages, `main/`)
+
+```bash
+cd main
+npm ci
+npm run pages:dev
+```
+
+Deploy (after `wrangler login`): `npm run pages:deploy` from **`main/`** (project name `rootrecord-website` per `package.json`).
 
 ## Remote
 
