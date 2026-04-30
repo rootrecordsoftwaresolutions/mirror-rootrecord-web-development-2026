@@ -20,7 +20,9 @@ Worker source of truth for the primary API is **`cloudflare/rootrecord-primary`*
 2. **Node.js** ≥ 18 and **npm**; for Solana site also **pnpm** (see `solana/solanasite/pnpm-lock.yaml`).
 3. **Cloudflare:** [Wrangler](https://developers.cloudflare.com/workers/wrangler/) — `npx wrangler login` once per machine.
 4. **Secrets:** copy each project’s `.env.example` to `.env` / `.dev.vars` where documented; never commit real secrets. Worker deploy uses `wrangler secret put` for production secrets.
-5. **D1:** from `cloudflare/rootrecord-primary`, apply migrations (`wrangler d1 migrations apply …` — see that package’s `package.json` scripts).
+5. **Deploy credentials:** copy **`credentials.env.example`** → **`credentials.env`** at this repo’s root (or any parent folder of `cloudflare/rootrecord-primary`). Both Worker `deploy.ps1` scripts walk upward until they find `credentials.env`. The real file is gitignored.
+6. **Local Worker dev:** in `cloudflare/rootrecord-primary`, copy **`.dev.vars.example`** → **`.dev.vars`** (gitignored).
+7. **D1:** from `cloudflare/rootrecord-primary`, apply migrations (`wrangler d1 migrations apply …` — see that package’s `package.json` scripts).
 
 ### Install & run — primary Worker
 

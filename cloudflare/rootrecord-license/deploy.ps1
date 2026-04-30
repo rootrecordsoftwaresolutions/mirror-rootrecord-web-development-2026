@@ -1,12 +1,25 @@
-# Deploy auth Worker (loads C:\Users\Admin\RootRecord\credentials.env).
+# Deploy auth Worker — loads credentials.env by walking parents from this folder (same as rootrecord-primary).
 # Hard rule: this project uses ONLY the D1 database named `root-record` (same UUID as rootrecord-primary).
 $ErrorActionPreference = "Stop"
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
     $PSNativeCommandUseErrorActionPreference = $false
 }
-$repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$repoRoot = $null
+$probe = $PSScriptRoot
+for ($i = 0; $i -le 16; $i++) {
+    $tryCred = Join-Path $probe "credentials.env"
+    if (Test-Path -LiteralPath $tryCred) {
+        $repoRoot = $probe
+        break
+    }
+    $parent = Split-Path $probe -Parent
+    if (-not $parent -or $parent -eq $probe) { break }
+    $probe = $parent
+}
+if (-not $repoRoot) {
+    throw "credentials.env not found (searched parents of $PSScriptRoot). Place it at your Web clone root or any ancestor folder."
+}
 $rootCred = Join-Path $repoRoot "credentials.env"
-if (-not (Test-Path -LiteralPath $rootCred)) { throw "Missing credentials file: $rootCred" }
 Get-Content $rootCred | ForEach-Object {
     $line = $_.Trim()
     if (-not $line -or $line.StartsWith("#")) { return }
