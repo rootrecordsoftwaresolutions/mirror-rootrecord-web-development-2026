@@ -50,9 +50,14 @@ async function verifyWalletSignature(
 }
 
 /**
- * GET/POST/DELETE `/v1/me/linked-wallet` — Bearer session; associates browser wallet pubkey with portal account.
+ * GET/POST/DELETE `/v1/me/linked-wallet` (also registered under `/api/v1/me/linked-wallet` in router).
+ * Bearer session; associates browser wallet pubkey with portal account.
  */
-export async function handleSolanaLinkedWalletRoute(request: Request, env: AuthEnv, method: string): Promise<Response> {
+async function handleSolanaLinkedWalletRouteImpl(
+  request: Request,
+  env: AuthEnv,
+  method: string,
+): Promise<Response> {
   if (method !== "GET" && method !== "POST" && method !== "DELETE") {
     return json({ detail: "Method not allowed" }, 405);
   }
@@ -142,8 +147,36 @@ export async function handleSolanaLinkedWalletRoute(request: Request, env: AuthE
   } catch (e) {
     const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
     console.error("link wallet save", msg);
+    if (/no such table|SQLITE_ERROR.*solana_linked_wallets/i.test(msg)) {
+      return json(
+        {
+          detail:
+            "Linked wallet storage is not deployed on this API yet. Apply D1 migration 0026 on root-record, then redeploy rootrecord-primary.",
+        },
+        503,
+      );
+    }
     return json({ detail: "Could not save link." }, 500);
   }
 
   return json({ ok: true, linked_wallet_pubkey: pubkey, linked_wallet_verified_at: now }, 200);
+}
+
+export async function handleSolanaLinkedWalletRoute(request: Request, env: AuthEnv, method: string): Promise<Response> {
+  try {
+    return await handleSolanaLinkedWalletRouteImpl(request, env, method);
+  } catch (e) {
+    const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+    console.error("solana-linked-wallet unhandled", msg);
+    if (/no such table|SQLITE_ERROR.*solana_linked_wallets/i.test(msg)) {
+      return json(
+        {
+          detail:
+            "Linked wallet storage is not ready (D1 migration 0026). Apply migrations on root-record, then redeploy.",
+        },
+        503,
+      );
+    }
+    return json({ detail: "Could not process wallet link. Try again in a moment." }, 500);
+  }
 }

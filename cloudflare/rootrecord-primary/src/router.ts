@@ -507,7 +507,19 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const q = url.searchParams;
 
+  /** Same handlers as `/v1/*` when the client uses `NEXT_PUBLIC_ROOTRECORD_API_BASE` with an `/api` prefix. */
+  if (sub === "/v1/me/linked-wallet") {
+    return handleSolanaLinkedWalletRoute(request, env, method);
+  }
 
+  if (method === "GET" && sub === "/v1/me") {
+    const auth = request.headers.get("Authorization") || "";
+    if (!auth.toLowerCase().startsWith("bearer ")) {
+      return json({ detail: "Missing token" }, 401);
+    }
+    const tok = auth.slice(7).trim();
+    return authMe(env, tok);
+  }
 
   if (method === "GET" && (pathname === "/api" || pathname === "/api/")) {
 
