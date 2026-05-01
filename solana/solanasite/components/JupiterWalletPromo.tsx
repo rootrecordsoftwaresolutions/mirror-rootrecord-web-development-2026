@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react';
-import { ExternalLink, Puzzle } from 'lucide-react';
+import { ExternalLink, Puzzle, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const JUPITER_SITE_HREF = 'https://jup.ag/';
 const JUPITER_EXTENSION_HREF =
   'https://chromewebstore.google.com/detail/jupiter-wallet/iledlaeogohbilgbfhmbgkgmpplbfboh';
+/** Jupiter Mobile on Google Play (Android). */
+const JUPITER_ANDROID_PLAY_HREF =
+  'https://play.google.com/store/apps/details?id=ag.jup.jupiter.android';
 
 type Variant = 'featured' | 'compact';
 
@@ -26,7 +29,7 @@ function ExternalAnchor({
 }
 
 /**
- * Promotes Jupiter Wallet (browser extension + jup.ag) as the recommended Solana wallet.
+ * Promotes Jupiter Wallet (Chrome extension, jup.ag, Google Play Android) as the recommended wallet.
  */
 export function JupiterWalletPromo({ variant = 'featured' }: { variant?: Variant }) {
   if (variant === 'compact') {
@@ -40,6 +43,8 @@ export function JupiterWalletPromo({ variant = 'featured' }: { variant?: Variant
           <ExternalAnchor href={JUPITER_SITE_HREF}>Jupiter</ExternalAnchor>
           {' — '}
           <ExternalAnchor href={JUPITER_EXTENSION_HREF}>Chrome extension</ExternalAnchor>
+          {' — '}
+          <ExternalAnchor href={JUPITER_ANDROID_PLAY_HREF}>Google Play (Android)</ExternalAnchor>
           .
         </span>
         <span className="text-xs sm:text-right shrink-0">
@@ -87,6 +92,13 @@ export function JupiterWalletPromo({ variant = 'featured' }: { variant?: Variant
               <a href={JUPITER_SITE_HREF} target="_blank" rel="noopener noreferrer">
                 jup.ag
                 <ExternalLink className="h-3.5 w-3.5 opacity-80" />
+              </a>
+            </Button>
+            <Button asChild size="sm" variant="outline" className="gap-1.5">
+              <a href={JUPITER_ANDROID_PLAY_HREF} target="_blank" rel="noopener noreferrer">
+                <Smartphone className="h-3.5 w-3.5 opacity-90" aria-hidden />
+                Google Play
+                <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden />
               </a>
             </Button>
           </div>
