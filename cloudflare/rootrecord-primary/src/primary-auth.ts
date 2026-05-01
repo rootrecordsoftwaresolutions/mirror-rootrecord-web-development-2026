@@ -106,7 +106,7 @@ export async function jwtVerifyClaims(
 
   secret: string
 
-): Promise<{ sub: string; aid: string } | null> {
+): Promise<{ sub: string; aid: string; sid?: string } | null> {
 
   const parts = token.split(".");
 
@@ -168,18 +168,71 @@ export async function jwtVerifyClaims(
 
   if (!sub || !aid) return null;
 
-  return { sub, aid };
+  const sidRaw = payload.sid;
+
+  const sid = typeof sidRaw === "string" && sidRaw.length >= 8 ? String(sidRaw).trim() : "";
+
+  return sid ? { sub, aid, sid } : { sub, aid };
 
 }
 
 
 
-async function issueToken(secret: string, email: string, accountId: string): Promise<string> {
+/** Optional client metadata stored on `license_sessions` (migration 0025). */
+export type SessionInsertMeta = {
+  device_id?: string | null;
+  user_agent?: string | null;
+  ip?: string | null;
+};
 
+/** New session row + JWT (e.g. after password change). */
+export async function issueFreshSessionToken(
+  env: AuthEnv,
+  email: string,
+  accountId: string,
+  meta: SessionInsertMeta
+): Promise<string | null> {
+  if (!env.JWT_SECRET || env.JWT_SECRET.length < 16) return null;
+  const sid = await insertLicenseSession(env.DB, accountId, meta);
+  return issueToken(env.JWT_SECRET, email, accountId, sid);
+}
+
+async function insertLicenseSession(
+  db: D1Database,
+  accountId: string,
+  meta: SessionInsertMeta
+): Promise<string | null> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const device_id = String(meta.device_id || "").trim().slice(0, 128) || null;
+  const user_agent = String(meta.user_agent || "").trim().slice(0, 512) || null;
+  const ip = String(meta.ip || "").trim().slice(0, 64) || null;
+  try {
+    await db
+      .prepare(
+        `INSERT INTO license_sessions (id, account_id, device_id, user_agent, ip, created_at, last_seen_at, revoked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
+      )
+      .bind(id, accountId, device_id, user_agent, ip, now, now)
+      .run();
+    return id;
+  } catch (e) {
+    const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+    console.error("insertLicenseSession", msg);
+    return null;
+  }
+}
+
+async function issueToken(secret: string, email: string, accountId: string, sessionId: string | null): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-
-  return jwtSign({ sub: email.toLowerCase(), aid: accountId, iat: now, exp: now + JWT_TTL_SEC }, secret);
-
+  const payload: Record<string, unknown> = {
+    sub: email.toLowerCase(),
+    aid: accountId,
+    iat: now,
+    exp: now + JWT_TTL_SEC,
+  };
+  if (sessionId) payload.sid = sessionId;
+  return jwtSign(payload, secret);
 }
 
 
@@ -242,13 +295,33 @@ export async function sessionFromBearer(
 
   token: string
 
-): Promise<{ email: string; accountId: string; account_created_at: string | null } | null> {
+): Promise<{ email: string; accountId: string; account_created_at: string | null; sessionId?: string } | null> {
 
   if (!env.JWT_SECRET || env.JWT_SECRET.length < 16) return null;
 
   const claims = await jwtVerifyClaims(token, env.JWT_SECRET);
 
   if (!claims) return null;
+
+  if (claims.sid) {
+    const srow = await env.DB
+      .prepare(
+        "SELECT id, revoked_at, last_seen_at FROM license_sessions WHERE id = ? AND account_id = ?"
+      )
+      .bind(claims.sid, claims.aid)
+      .first<{ id: string; revoked_at: string | null; last_seen_at: string | null }>();
+    if (!srow) return null;
+    if (srow.revoked_at && String(srow.revoked_at).trim()) return null;
+    const last = srow.last_seen_at ? Date.parse(srow.last_seen_at) : NaN;
+    if (!Number.isFinite(last) || Date.now() - last > 5 * 60_000) {
+      const now = new Date().toISOString();
+      try {
+        await env.DB.prepare("UPDATE license_sessions SET last_seen_at = ? WHERE id = ?").bind(now, claims.sid).run();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 
   const row = await env.DB.prepare(
     "SELECT id, email, created_at FROM license_accounts WHERE id = ? AND email = ?"
@@ -260,16 +333,28 @@ export async function sessionFromBearer(
 
   if (!row) return null;
 
+  const email = String(row.email || "")
+    .trim()
+    .toLowerCase();
+  if (!email) return null;
+
+  const accountId = String(row.id || "").trim();
+  if (!accountId) return null;
+
   const account_created_at =
     typeof row.created_at === "string" && row.created_at.trim() ? row.created_at.trim() : null;
 
-  return { email: row.email, accountId: row.id, account_created_at };
+  return { email, accountId, account_created_at, sessionId: claims.sid };
 
 }
 
 
 
-export async function authSignup(env: AuthEnv, body: Record<string, unknown>): Promise<Response> {
+export async function authSignup(
+  env: AuthEnv,
+  body: Record<string, unknown>,
+  sessionMeta?: SessionInsertMeta
+): Promise<Response> {
 
   if (!env.JWT_SECRET || env.JWT_SECRET.length < 16) return authMisconfigured();
 
@@ -350,7 +435,9 @@ export async function authSignup(env: AuthEnv, body: Record<string, unknown>): P
 
   try {
 
-    const token = await issueToken(env.JWT_SECRET, email, id);
+    const sid = sessionMeta ? await insertLicenseSession(env.DB, id, sessionMeta) : null;
+
+    const token = await issueToken(env.JWT_SECRET, email, id, sid);
 
     return json(authSuccessJson({ id, email }, token), 200);
 
@@ -366,7 +453,11 @@ export async function authSignup(env: AuthEnv, body: Record<string, unknown>): P
 
 
 
-export async function authLogin(env: AuthEnv, body: Record<string, unknown>): Promise<Response> {
+export async function authLogin(
+  env: AuthEnv,
+  body: Record<string, unknown>,
+  sessionMeta?: SessionInsertMeta
+): Promise<Response> {
 
   if (!env.JWT_SECRET || env.JWT_SECRET.length < 16) return authMisconfigured();
 
@@ -436,7 +527,9 @@ export async function authLogin(env: AuthEnv, body: Record<string, unknown>): Pr
 
     }
 
-    const token = await issueToken(env.JWT_SECRET, row.email, row.id);
+    const sid = sessionMeta ? await insertLicenseSession(env.DB, row.id, sessionMeta) : null;
+
+    const token = await issueToken(env.JWT_SECRET, row.email, row.id, sid);
 
     return json(authSuccessJson(row, token), 200);
 
@@ -477,13 +570,44 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
     apps = {
       rootrecord_business_manager_windows: {
         associated: null,
-        note: "Association status is temporarily unavailable.",
+        note: "Association data temporarily unavailable.",
+        last_connected_at: null,
       },
-      rootrecord_business_manager_android: { associated: false },
-      rootrecord_weather_manager_windows: { associated: false },
-      rootrecord_weather_manager_android: { associated: false },
+      rootrecord_business_manager_android: { associated: false, last_connected_at: null },
+      rootrecord_weather_manager_windows: { associated: false, last_connected_at: null },
+      rootrecord_weather_manager_android: { associated: false, last_connected_at: null },
       signals: { mobile_push: false, saved_locations: false, weather_cache: false },
     };
+  }
+
+  let linked_wallet_pubkey: string | null = null;
+
+  let linked_wallet_verified_at: string | null = null;
+
+  try {
+
+    const lw = await env.DB.prepare(
+
+      "SELECT pubkey, verified_at FROM solana_linked_wallets WHERE account_id = ?",
+
+    )
+
+      .bind(sess.accountId)
+
+      .first<{ pubkey: string; verified_at: string }>();
+
+    if (lw?.pubkey) {
+
+      linked_wallet_pubkey = lw.pubkey;
+
+      linked_wallet_verified_at = lw.verified_at;
+
+    }
+
+  } catch {
+
+    /* table may not exist until migration 0026 */
+
   }
 
   return json(
@@ -513,6 +637,10 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
       billing_checkout_available,
 
       account_created_at: sess.account_created_at,
+
+      linked_wallet_pubkey,
+
+      linked_wallet_verified_at,
 
       apps,
 

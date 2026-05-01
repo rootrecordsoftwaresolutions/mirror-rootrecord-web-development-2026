@@ -22,6 +22,7 @@ import { handleSolanaSiteTokenDiscordNotifyRoute } from "./solana-site-token-dis
 import { handleSolanaSiteEcosystemOtcRoutes } from "./solana-site-ecosystem-otc";
 import { maybeForwardSolanaToolsApi } from "./solana-tools-forward";
 import { handleSolanaAppActivityRoute } from "./solana-app-activity";
+import { handleSolanaLinkedWalletRoute } from "./solana-linked-wallet";
 
 import {
 
@@ -366,6 +367,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     }
 
+    if (pathname === "/v1/me/linked-wallet") {
+
+      return handleSolanaLinkedWalletRoute(request, env, method);
+
+    }
+
     if (method === "DELETE" && pathname === "/v1/me") {
 
       const auth = request.headers.get("Authorization") || "";
@@ -397,6 +404,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           env.DB.prepare("DELETE FROM license_sessions WHERE account_id = ?").bind(accountId),
 
           env.DB.prepare("DELETE FROM license_email_change WHERE account_id = ?").bind(accountId),
+
+          env.DB.prepare("DELETE FROM solana_linked_wallets WHERE account_id = ?").bind(accountId),
+
+          env.DB.prepare("DELETE FROM internal_solana_wallets WHERE account_id = ?").bind(accountId),
 
           env.DB.prepare("DELETE FROM rrwm_locations WHERE user_id = ?").bind(userId),
 

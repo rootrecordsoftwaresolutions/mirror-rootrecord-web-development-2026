@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -9,12 +10,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  buildSolanaWalletLinkMessage,
   fetchEarnSummary,
   fetchPortalMe,
   formatAccountCreatedAt,
   planLabelFromMe,
   portalDeleteAccount,
+  portalLinkWallet,
   portalLogout,
+  portalUnlinkWallet,
   type EarnSummary,
   type PortalMeData,
 } from '@/lib/portalAccountApi';
@@ -28,6 +32,34 @@ import {
 } from '@/lib/rootrecordSession';
 
 type Phase = 'loading' | 'forms' | 'account';
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) {
+    bin += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(bin);
+}
+
+function linkedWalletFromMe(data: PortalMeData): string {
+  const v = data.linked_wallet_pubkey;
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+function linkedVerifiedFromMe(data: PortalMeData): string {
+  const v = data.linked_wallet_verified_at;
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+function formatLinkedVerifiedAt(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  try {
+    return new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
+}
 
 function subscriptionLine(data: PortalMeData): { text: string; showBillingLink: boolean } {
   const label = planLabelFromMe(data);
@@ -76,11 +108,13 @@ function DetailRow({ k, children }: { k: string; children: React.ReactNode }) {
 }
 
 export function AccountPageClient() {
+  const { publicKey, signMessage, connected } = useWallet();
   const [phase, setPhase] = useState<Phase>('loading');
   const [status, setStatus] = useState<{ msg: string; kind: 'ok' | 'warn' | 'err' | '' }>({ msg: '', kind: '' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
   const [me, setMe] = useState<PortalMeData | null>(null);
   const [earn, setEarn] = useState<EarnSummary | null>(null);
   const hasApi = Boolean(getRootRecordApiBase());
@@ -203,7 +237,89 @@ export function AccountPageClient() {
     toast.success('Account deleted');
   }
 
+  async function onLinkWallet() {
+    const token = getPortalToken();
+    if (!token || !me) {
+      applyStatus('You are not signed in.', 'warn');
+      return;
+    }
+    if (!connected || !publicKey) {
+      toast.error('Connect your wallet using the control in the site header, then try again.');
+      return;
+    }
+    if (!signMessage) {
+      toast.error('This wallet does not support message signing.');
+      return;
+    }
+    const accountId = String(me.account_id || '').trim();
+    if (!accountId) {
+      applyStatus('Missing account id. Please refresh the page.', 'err');
+      return;
+    }
+    setLinkBusy(true);
+    applyStatus('', '');
+    try {
+      const message = buildSolanaWalletLinkMessage(accountId, publicKey.toBase58());
+      const encoded = new TextEncoder().encode(message);
+      const sigBytes = await signMessage(encoded);
+      const signature = bytesToBase64(sigBytes);
+      const r = await portalLinkWallet(token, {
+        pubkey: publicKey.toBase58(),
+        message,
+        signature,
+      });
+      if (!r.ok) {
+        if (r.status === 409) {
+          toast.error(r.detail);
+        } else {
+          applyStatus(r.detail, 'err');
+        }
+        return;
+      }
+      toast.success('Wallet linked to your account');
+      await loadAccount();
+    } catch (err) {
+      const net = err instanceof Error ? err.message : '';
+      if (/User rejected|rejected request|cancel/i.test(net)) {
+        toast.message('Signing canceled');
+      } else {
+        applyStatus(
+          net && /network|fetch|failed|load/i.test(net)
+            ? 'Could not reach the account service. Try again in a moment.'
+            : 'Could not complete wallet link. Try again.',
+          'err',
+        );
+      }
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
+  async function onUnlinkWallet() {
+    const token = getPortalToken();
+    if (!token) {
+      applyStatus('You are not signed in.', 'warn');
+      return;
+    }
+    const ok = window.confirm('Remove the linked wallet from this RootRecord account?');
+    if (!ok) return;
+    setLinkBusy(true);
+    applyStatus('', '');
+    const r = await portalUnlinkWallet(token);
+    setLinkBusy(false);
+    if (!r.ok) {
+      applyStatus(r.detail, 'err');
+      return;
+    }
+    toast.success('Linked wallet removed');
+    await loadAccount();
+  }
+
   const sub = me ? subscriptionLine(me) : { text: '', showBillingLink: false };
+  const linkedPk = me ? linkedWalletFromMe(me) : '';
+  const linkedVerified = me ? linkedVerifiedFromMe(me) : '';
+  const connectedPk = publicKey?.toBase58() ?? '';
+  const linkedMatchesConnected = Boolean(linkedPk && connectedPk && linkedPk === connectedPk);
 
   return (
     <div className="container py-8 md:py-12 max-w-2xl">
@@ -319,6 +435,54 @@ export function AccountPageClient() {
                   )}
                 </DetailRow>
                 <DetailRow k="Password on file">{me.has_password ? 'Yes' : 'No'}</DetailRow>
+                <DetailRow k="Linked wallet">
+                  <div className="space-y-2">
+                    <div className="font-mono text-xs break-all">{linkedPk || '—'}</div>
+                    {linkedPk && linkedVerified ? (
+                      <p className="text-xs text-muted-foreground">
+                        Verified {formatLinkedVerifiedAt(linkedVerified)}
+                      </p>
+                    ) : null}
+                    {linkedPk && connectedPk && !linkedMatchesConnected ? (
+                      <p className="text-xs text-amber-200/90">
+                        Header wallet ({connectedPk.slice(0, 4)}…{connectedPk.slice(-4)}) differs from your linked
+                        wallet. OTC and on-chain tools use the linked address.
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {linkedPk ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={busy || linkBusy}
+                          onClick={() => void onUnlinkWallet()}
+                        >
+                          {linkBusy ? 'Working…' : 'Unlink'}
+                        </Button>
+                      ) : null}
+                      {!linkedMatchesConnected ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={busy || linkBusy || !connected || !signMessage}
+                          onClick={() => void onLinkWallet()}
+                        >
+                          {linkBusy
+                            ? 'Confirm in wallet…'
+                            : linkedPk
+                              ? 'Link header wallet instead'
+                              : 'Link connected wallet'}
+                        </Button>
+                      ) : null}
+                    </div>
+                    {!connected ? (
+                      <p className="text-xs text-muted-foreground">
+                        Connect a wallet in the header, then sign one message to link it here.
+                      </p>
+                    ) : null}
+                  </div>
+                </DetailRow>
                 <DetailRow k="Beta tester rewards">{rewardsLine(earn)}</DetailRow>
               </div>
             </CardContent>
@@ -331,13 +495,13 @@ export function AccountPageClient() {
                 Deleting your account permanently removes your RootRecord portal profile and any server-stored data tied
                 to it (saved locations, notifications).
               </p>
-              <Button type="button" variant="outline" disabled={busy} onClick={() => void onDeleteAccount()}>
+              <Button type="button" variant="outline" disabled={busy || linkBusy} onClick={() => void onDeleteAccount()}>
                 Delete account
               </Button>
             </CardContent>
           </Card>
 
-          <Button type="button" variant="outline" disabled={busy} onClick={() => void onLogout()}>
+          <Button type="button" variant="outline" disabled={busy || linkBusy} onClick={() => void onLogout()}>
             Sign out
           </Button>
         </div>

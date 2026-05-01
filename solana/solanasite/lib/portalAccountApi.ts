@@ -4,6 +4,19 @@
 
 import { getRootRecordApiBase } from '@/lib/rootrecordSession';
 
+/** Must match first line in `Web/cloudflare/rootrecord-primary/src/solana-linked-wallet.ts`. */
+export const SOLANA_LINK_WALLET_MESSAGE_PREFIX = 'RootRecord account wallet link';
+
+export function buildSolanaWalletLinkMessage(accountId: string, walletB58: string): string {
+  const issued = new Date().toISOString();
+  return [
+    SOLANA_LINK_WALLET_MESSAGE_PREFIX,
+    `account_id:${accountId}`,
+    `wallet:${walletB58}`,
+    `issued:${issued}`,
+  ].join('\n');
+}
+
 const BETA_EARN_APP_ID = 'rootrecord_weather_manager_android';
 
 function looksTechnicalMessage(s: string): boolean {
@@ -115,6 +128,44 @@ export async function portalLogout(token: string): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+export async function portalLinkWallet(
+  token: string,
+  body: { pubkey: string; message: string; signature: string },
+): Promise<{ ok: true } | { ok: false; status: number; detail: string }> {
+  const base = getRootRecordApiBase();
+  if (!base) return { ok: false, status: 503, detail: 'Account API is not configured.' };
+  const res = await fetch(`${base}/v1/me/linked-wallet`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const { j } = await parsePortalJson(res);
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      detail: friendlyPortalApiError(j) || 'Could not link this wallet.',
+    };
+  }
+  return { ok: true };
+}
+
+export async function portalUnlinkWallet(
+  token: string,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  const base = getRootRecordApiBase();
+  if (!base) return { ok: false, detail: 'Account API is not configured.' };
+  const res = await fetch(`${base}/v1/me/linked-wallet`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const { j } = await parsePortalJson(res);
+  if (!res.ok) {
+    return { ok: false, detail: friendlyPortalApiError(j) || 'Could not unlink wallet.' };
+  }
+  return { ok: true };
 }
 
 export async function portalDeleteAccount(
