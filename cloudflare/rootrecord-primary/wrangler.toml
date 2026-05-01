@@ -35,10 +35,9 @@ STRIPE_PRICE_ID = "price_REPLACE_WITH_YOUR_STRIPE_PRICE_ID"
 STRIPE_PRICING_TABLE_ID = "prctbl_1TQJ0kIaRpbMiAovAUe3X3QJ"
 STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWxLXDgJR7kRNSBSM8sJ2Wat1zuC56iE4TCTyPfqmEfTT600cR21LwYA"
 
-# Internal custodial wallet encryption (AES-256-GCM).
-# Set as a secret/var (base64-encoded 32-byte key). Example:
-#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-#   wrangler secret put INTERNAL_WALLET_ENC_KEY_B64
+# Internal custodial wallet encryption (AES-256-GCM). deploy.ps1 uploads INTERNAL_WALLET_ENC_KEY_B64
+# (from credentials.env, or .deploy-internal-wallet-key, or auto-generated like JWT_SECRET).
+# Manual: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" | wrangler secret put INTERNAL_WALLET_ENC_KEY_B64
 # Optional Discord channel for Solana tooling events (internal wallet provision, etc.):
 #   wrangler secret put DISCORD_WEBHOOK_SOLANA_TOOLS
 # In-app feedback (Business Manager, Account Hub, Weather mobile → POST /api/feedback):
@@ -57,6 +56,10 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 #   wrangler secret put SOLANA_TOOLS_API_FORWARD_URL
 #   Value: https://<project>.vercel.app   (no trailing slash)
 
+# One-time / ops: provision custodial wallets for all `license_accounts` missing `internal_solana_wallets`
+# (POST /api/internal/provision-custodial-wallets-missing, same X-RR-Push-Admin-Key as push-broadcast).
+#   powershell -NoProfile -File ./provision-custodial-backfill.ps1
+#
 # All-device FCM broadcast (POST /api/internal/push-broadcast):
 #   wrangler secret put RR_PUSH_ADMIN_SECRET
 #   wrangler secret put FCM_SERVICE_ACCOUNT_JSON

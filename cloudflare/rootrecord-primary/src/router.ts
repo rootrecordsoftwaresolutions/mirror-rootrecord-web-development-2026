@@ -19,6 +19,7 @@ import { handleFeedbackRoute } from "./feedback-route";
 import { performAccountDeletion } from "./account-deletion";
 import { handleRewardsLedgerV1 } from "./earn-rewards-ledger";
 import {
+  handleCustodialInternalBackfillRoute,
   handleCustodialSolWalletV1,
   handleCustodialWithdrawDestV1,
   handleSolanaInternalWalletRoutes,
@@ -904,6 +905,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (method === "POST" && sub === "/auth/wipe-business-data") {
     return bmWipeOwnedRows(request, env);
   }
+
+  const custodialBackfillRes = await handleCustodialInternalBackfillRoute(request, env, sub, method);
+
+  if (custodialBackfillRes) return custodialBackfillRes;
 
   const pushRes = await handlePushRoutes(request, env, sub, method);
 

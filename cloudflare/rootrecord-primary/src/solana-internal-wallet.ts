@@ -18,6 +18,7 @@ import bs58 from "bs58";
 import nacl from "tweetnacl";
 
 import { json } from "./cors";
+import { verifyWorkerOpsAdmin } from "./push";
 import { sessionFromBearer, type AuthEnv } from "./primary-auth";
 import { notifySolanaToolsDiscord } from "./discord-solana-notify";
 import { insertTreasuryToCustodialLedger } from "./earn-rewards-ledger";
@@ -132,12 +133,29 @@ export async function loadKeypairForAccount(env: InternalWalletEnv, accountId: s
   return null;
 }
 
+export type ProvisionCustodialOptions = { suppressDiscord?: boolean };
+
 /** Create custodial keypair if missing; safe to call on signup (no-op if disabled or exists). */
-export async function provisionCustodialWalletIfMissing(env: InternalWalletEnv, accountId: string): Promise<void> {
+export async function provisionCustodialWalletIfMissing(
+  env: InternalWalletEnv,
+  accountId: string,
+  opts?: ProvisionCustodialOptions,
+): Promise<{ created: boolean }> {
+  const suppressDiscord = Boolean(opts?.suppressDiscord);
   const aesKey = await importAesKeyFromEnv(env);
-  if (!aesKey) return;
-  const existing = await readWalletRow(env.DB, accountId);
-  if (existing) return;
+  if (!aesKey) return { created: false };
+  const aid = String(accountId || "").trim();
+  if (!aid) return { created: false };
+
+  const existing = await readWalletRow(env.DB, aid);
+  if (existing) return { created: false };
+
+  const pubkeyOrphan = await custodialPubkeyOnly(env.DB, aid);
+  if (pubkeyOrphan) {
+    console.error("provisionCustodialWalletIfMissing: unreadable wallet row", aid);
+    return { created: false };
+  }
+
   const kp = Keypair.generate();
   const enc = await aesGcmEncrypt(aesKey, kp.secretKey);
   try {
@@ -145,25 +163,128 @@ export async function provisionCustodialWalletIfMissing(env: InternalWalletEnv, 
       .prepare(
         "INSERT INTO internal_solana_wallets (account_id, pubkey, privkey_pkcs8_enc, privkey_iv) VALUES (?, ?, ?, ?)",
       )
-      .bind(accountId, kp.publicKey.toBase58(), enc.ct, enc.iv)
+      .bind(aid, kp.publicKey.toBase58(), enc.ct, enc.iv)
       .run();
     try {
       await env.DB
         .prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)")
-        .bind(accountId)
+        .bind(aid)
         .run();
     } catch {
       /* rr_earn_custodial_state until migration 0027 */
     }
+    if (!suppressDiscord) {
+      const msg =
+        `**Solana tools — custodial wallet (signup auto)**\n` +
+        `**Account:** \`${aid}\`\n` +
+        `**Pubkey:** \`${kp.publicKey.toBase58()}\`\n`;
+      await notifySolanaToolsDiscord(env.DISCORD_WEBHOOK_SOLANA_TOOLS, msg);
+    }
+    return { created: true };
   } catch (e) {
     const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
-    console.error("provisionCustodialWalletIfMissing", accountId, msg);
+    console.error("provisionCustodialWalletIfMissing", aid, msg);
+    return { created: false };
   }
-  const msg =
-    `**Solana tools — custodial wallet (signup auto)**\n` +
-    `**Account:** \`${accountId}\`\n` +
-    `**Pubkey:** \`${kp.publicKey.toBase58()}\`\n`;
-  await notifySolanaToolsDiscord(env.DISCORD_WEBHOOK_SOLANA_TOOLS, msg);
+}
+
+/** Operator-only: provision custodial wallets for accounts missing `internal_solana_wallets` rows. */
+export async function backfillCustodialWalletsMissingAccounts(
+  env: InternalWalletEnv,
+  batchLimit: number,
+): Promise<{
+  examined: number;
+  provisioned: number;
+  encryption_off: boolean;
+  remaining_without_wallet: number;
+}> {
+  const aesKey = await importAesKeyFromEnv(env);
+  if (!aesKey) {
+    return { examined: 0, provisioned: 0, encryption_off: true, remaining_without_wallet: 0 };
+  }
+  const lim = Math.min(500, Math.max(1, Math.floor(batchLimit || 300)));
+  const rows = await env.DB
+    .prepare(
+      `SELECT la.id AS account_id
+       FROM license_accounts la
+       LEFT JOIN internal_solana_wallets iw ON iw.account_id = la.id
+       WHERE iw.account_id IS NULL
+       LIMIT ?`,
+    )
+    .bind(lim)
+    .all<{ account_id: string }>();
+  const ids = (rows.results || []).map((r) => String(r.account_id || "").trim()).filter(Boolean);
+  let provisioned = 0;
+  for (const id of ids) {
+    const r = await provisionCustodialWalletIfMissing(env, id, { suppressDiscord: true });
+    if (r.created) provisioned += 1;
+  }
+  const cnt = await env.DB
+    .prepare(
+      `SELECT COUNT(*) AS c
+       FROM license_accounts la
+       LEFT JOIN internal_solana_wallets iw ON iw.account_id = la.id
+       WHERE iw.account_id IS NULL`,
+    )
+    .first<{ c: number }>();
+  const remaining = Math.max(0, Math.floor(Number(cnt?.c) || 0));
+  await notifySolanaToolsDiscord(
+    env.DISCORD_WEBHOOK_SOLANA_TOOLS,
+    `**Solana tools — custodial bulk backfill (batch)**\n` +
+      `Examined (this batch): ${ids.length}\n` +
+      `Provisioned (this batch): ${provisioned}\n` +
+      `Accounts still without wallet: ${remaining}\n`,
+  );
+  return {
+    examined: ids.length,
+    provisioned,
+    encryption_off: false,
+    remaining_without_wallet: remaining,
+  };
+}
+
+export type CustodialBackfillEnv = InternalWalletEnv & { RR_PUSH_ADMIN_SECRET?: string };
+
+/** POST `/api/internal/provision-custodial-wallets-missing` — `X-RR-Push-Admin-Key` must match Worker secret. */
+export async function handleCustodialInternalBackfillRoute(
+  request: Request,
+  env: CustodialBackfillEnv,
+  sub: string,
+  method: string,
+): Promise<Response | null> {
+  if (method !== "POST" || sub !== "/internal/provision-custodial-wallets-missing") return null;
+  const secret = (env.RR_PUSH_ADMIN_SECRET || "").trim();
+  if (!secret) {
+    return json({ ok: false, detail: "RR_PUSH_ADMIN_SECRET is not set on this Worker." }, 503);
+  }
+  const adminOk = await verifyWorkerOpsAdmin(request, env);
+  if (!adminOk) {
+    const has = Boolean(request.headers.get("X-RR-Push-Admin-Key"));
+    return json({ ok: false, detail: has ? "Invalid admin key." : "Missing X-RR-Push-Admin-Key header." }, 401);
+  }
+  let batchLimit = 300;
+  try {
+    const body = (await request.json().catch(() => ({}))) as { limit?: number };
+    if (typeof body.limit === "number" && Number.isFinite(body.limit)) {
+      batchLimit = Math.min(500, Math.max(1, Math.floor(body.limit)));
+    }
+  } catch {
+    /* empty body */
+  }
+  const r = await backfillCustodialWalletsMissingAccounts(env, batchLimit);
+  if (r.encryption_off) {
+    return json({ ok: false, detail: "INTERNAL_WALLET_ENC_KEY_B64 is not configured on this Worker." }, 503);
+  }
+  return json(
+    {
+      ok: true,
+      examined: r.examined,
+      provisioned: r.provisioned,
+      remaining_without_wallet: r.remaining_without_wallet,
+      more_batches_suggested: r.remaining_without_wallet > 0,
+    },
+    200,
+  );
 }
 
 function custodialEnabled(env: InternalWalletEnv): boolean {
@@ -232,8 +353,14 @@ export async function handleCustodialSolWalletV1(
     }
     const aesKey = await importAesKeyFromEnv(env);
     if (!aesKey) {
+      console.error("custodial wallet: INTERNAL_WALLET_ENC_KEY_B64 missing or invalid length (need 32-byte key base64)");
       return json(
-        { ok: false, detail: "Internal wallet encryption is not configured. Set INTERNAL_WALLET_ENC_KEY_B64.", custodial_enabled: false },
+        {
+          ok: false,
+          detail:
+            "Custodial wallet creation is not available on this deployment yet (server wallet encryption is not enabled). Contact support if this continues.",
+          custodial_enabled: false,
+        },
         503,
       );
     }
@@ -274,9 +401,11 @@ export async function handleCustodialSolWalletV1(
           );
         }
       }
-      const detail = /no such table/i.test(msg)
-        ? "Database is missing custodial tables. Apply D1 migrations (internal_solana_wallets)."
-        : "Could not create custodial wallet.";
+      const detail = /no such table|no such column/i.test(msg)
+        ? "Account database is missing custodial wallet tables or columns. Apply the latest D1 migrations for this Worker."
+        : /UNIQUE constraint failed/i.test(msg)
+          ? "A wallet record already exists for this account. Refresh the page or contact support."
+          : "Could not create custodial wallet. Try again in a moment; if it keeps failing, contact support.";
       return json({ ok: false, detail }, 500);
     }
     const row = await readWalletRow(env.DB, sess.accountId);

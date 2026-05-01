@@ -20,7 +20,8 @@ export function buildSolanaWalletLinkMessage(accountId: string, walletB58: strin
 const BETA_EARN_APP_ID = 'rootrecord_weather_manager_android';
 
 function looksTechnicalMessage(s: string): boolean {
-  return /[`{}[\]]|STRIPE_|WORKER|LICENSE_|\/v1\/|INTERNAL|D1\b|Cloudflare|ROOTRECORD_|Bearer |webhook|price_id|secret_key|operator\b|site-config/i.test(
+  /* Use INTERNAL_ not INTERNAL — otherwise benign phrases like "Internal wallet" are hidden from users. */
+  return /[`{}[\]]|STRIPE_|WORKER|LICENSE_|\/v1\/|INTERNAL_|D1\b|Cloudflare|ROOTRECORD_|Bearer |webhook|price_id|secret_key|operator\b|site-config/i.test(
     s,
   );
 }

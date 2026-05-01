@@ -59,6 +59,13 @@ async function verifyPushAdminKey(headerVal: string | null, secret: string): Pro
   return timingSafeEqual(pHash, sHash);
 }
 
+/** Same gate as POST /api/internal/push-broadcast (`X-RR-Push-Admin-Key` vs `RR_PUSH_ADMIN_SECRET`). */
+export async function verifyWorkerOpsAdmin(request: Request, env: { RR_PUSH_ADMIN_SECRET?: string }): Promise<boolean> {
+  const secret = (env.RR_PUSH_ADMIN_SECRET || "").trim();
+  if (!secret) return false;
+  return verifyPushAdminKey(request.headers.get("X-RR-Push-Admin-Key"), secret);
+}
+
 export async function handlePushRoutes(
   request: Request,
   env: PushEnv,
@@ -96,7 +103,7 @@ export async function handlePushRoutes(
     if (!secret) {
       return json({ detail: "RR_PUSH_ADMIN_SECRET is not set on the server." }, 503);
     }
-    const adminOk = await verifyPushAdminKey(request.headers.get("X-RR-Push-Admin-Key"), secret);
+    const adminOk = await verifyWorkerOpsAdmin(request, env);
     if (!adminOk) {
       const has = Boolean(request.headers.get("X-RR-Push-Admin-Key"));
       return json({ detail: has ? "Invalid admin key." : "Missing X-RR-Push-Admin-Key header." }, 401);

@@ -79,6 +79,38 @@ if (-not $jwt -or $jwt.Length -lt 16) {
 }
 $jwt | npx wrangler secret put JWT_SECRET
 
+function Test-InternalWalletEncKeyB64([string]$b64) {
+    if (-not $b64) { return $false }
+    $s = $b64.Trim()
+    if ($s.Length -lt 32) { return $false }
+    try {
+        $raw = [Convert]::FromBase64String($s)
+        return $raw.Length -eq 32
+    } catch {
+        return $false
+    }
+}
+$encKey = [string]$env:INTERNAL_WALLET_ENC_KEY_B64
+$encFile = Join-Path $PSScriptRoot ".deploy-internal-wallet-key"
+if (-not (Test-InternalWalletEncKeyB64 $encKey)) {
+    if (Test-Path -LiteralPath $encFile) {
+        $encKey = (Get-Content -LiteralPath $encFile -Raw).Trim()
+    }
+}
+if (-not (Test-InternalWalletEncKeyB64 $encKey)) {
+    $inCi = ($env:GITHUB_ACTIONS -eq "true") -or ($env:CI -eq "true")
+    if ($inCi) {
+        throw "INTERNAL_WALLET_ENC_KEY_B64 is missing or invalid (must be base64 of exactly 32 bytes). In CI, set it in secrets and export into env before deploy.ps1; do not auto-generate."
+    }
+    $kb = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($kb)
+    $encKey = [Convert]::ToBase64String($kb)
+    Set-Content -LiteralPath $encFile -Value $encKey -NoNewline
+    Write-Host "Generated INTERNAL_WALLET_ENC_KEY_B64 in .deploy-internal-wallet-key (gitignored). Optional: INTERNAL_WALLET_ENC_KEY_B64 in credentials.env for other machines/CI."
+}
+$encKey | npx wrangler secret put INTERNAL_WALLET_ENC_KEY_B64
+Write-Host "Uploaded INTERNAL_WALLET_ENC_KEY_B64 (custodial Solana wallet encryption)."
+
 $pushAdmin = [string]$env:RR_PUSH_ADMIN_SECRET
 if ($pushAdmin -and $pushAdmin.Length -ge 8) {
   $pushAdmin | npx wrangler secret put RR_PUSH_ADMIN_SECRET

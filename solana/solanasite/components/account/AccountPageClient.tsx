@@ -5,10 +5,14 @@ import Link from 'next/link';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { toast } from 'sonner';
 
+import { ExternalLink } from 'lucide-react';
+import QRCode from 'react-qr-code';
+
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 import {
   buildSolanaWalletLinkMessage,
   fetchEarnSummary,
@@ -107,17 +111,57 @@ function shortenPubkey(s: string): string {
   return `${t.slice(0, 8)}…${t.slice(-6)}`;
 }
 
-function formatLedgerWhen(iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return iso || '—';
-  try {
-    return new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  } catch {
-    return iso;
-  }
+const SOLSCAN_ACCOUNT_BASE = 'https://solscan.io/account/';
+
+function solscanAccountHref(pubkey: string): string {
+  return `${SOLSCAN_ACCOUNT_BASE}${encodeURIComponent(pubkey.trim())}`;
 }
 
-function rewardsBlock(earn: EarnSummary | null): ReactNode {
+function SolscanAddressLink({ address, className }: { address: string; className?: string }) {
+  const t = address.trim();
+  if (!t) return null;
+  return (
+    <a
+      href={solscanAccountHref(t)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        'inline-flex items-start gap-1.5 font-mono text-xs text-sol-green hover:underline break-all',
+        className,
+      )}
+    >
+      <span>{t}</span>
+      <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+    </a>
+  );
+}
+
+function BalanceStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-background/35 px-3 py-2.5">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="mt-1 text-base font-semibold tabular-nums tracking-tight text-foreground">{value}</div>
+      {hint ? <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
+
+function earnOptionalInt(earn: EarnSummary | null, key: string): number | null {
+  if (!earn || !(key in earn)) return null;
+  const n = Number((earn as Record<string, unknown>)[key]);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.floor(n));
+}
+
+function RewardsProgramNote({ earn }: { earn: EarnSummary | null }) {
   const learn = (
     <a
       href={portalAbsoluteUrl('/beta-tester-rewards.html')}
@@ -131,37 +175,25 @@ function rewardsBlock(earn: EarnSummary | null): ReactNode {
   if (!earn) {
     return (
       <p className="text-sm text-muted-foreground">
-        Summary not loaded. Open the Weather Manager app while signed in, or try refreshing. {learn}
+        RRTT summary not loaded. Open the Weather Manager app while signed in, or try refreshing. {learn}
       </p>
     );
   }
-  const total = Math.max(0, Math.floor(earn.balance));
-  const pending = numEarn(earn, 'custodial_pending_units');
-  const avail = numEarn(earn, 'custodial_available_withdraw_units');
   return (
-    <div className="space-y-2">
-      <p className="text-sm tabular-nums">
-        <span className="text-muted-foreground">Total </span>
-        <span className="font-semibold text-foreground">{total.toLocaleString()}</span>
-        <span className="text-muted-foreground"> RRTT</span>
-      </p>
-      {pending > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Pending to custodial:{' '}
-          <span className="tabular-nums font-medium text-amber-200/90">{pending.toLocaleString()}</span>
-        </p>
-      ) : null}
-      {avail > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Available to withdraw:{' '}
-          <span className="tabular-nums font-medium text-sol-green">{avail.toLocaleString()}</span>
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        Treasury sends RRTT to your custodial wallet on the daily schedule when enabled. {learn}
-      </p>
-    </div>
+    <p className="text-xs text-muted-foreground leading-relaxed">
+      Treasury sends RRTT to your custodial wallet on the daily schedule when enabled. {learn}
+    </p>
   );
+}
+
+function formatLedgerWhen(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso || '—';
+  try {
+    return new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
 }
 
 function EmptyLine({ children }: { children: React.ReactNode }) {
@@ -494,6 +526,13 @@ export function AccountPageClient() {
   const custodialPk = custodialPubFromMe(me);
   const solLamports = solCachedLamports(me);
   const solSol = solLamports != null ? solLamports / 1e9 : null;
+  const onchainRrtt = earnOptionalInt(earn, 'custodial_onchain_rrtt');
+  const totalEarnUnits =
+    earn != null && Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : null;
+  const pendingUnits = earn != null ? numEarn(earn, 'custodial_pending_units') : null;
+  const availWithdraw = earn != null ? numEarn(earn, 'custodial_available_withdraw_units') : null;
+  const savedWithdrawDest =
+    me && typeof me.withdraw_dest_pubkey === 'string' ? me.withdraw_dest_pubkey.trim() : '';
 
   return (
     <div className="container py-8 md:py-12 max-w-4xl">
@@ -585,9 +624,12 @@ export function AccountPageClient() {
       {phase === 'account' && me ? (
         <div className="space-y-6">
           <Card className="border-border bg-ink-800/40">
-            <CardContent className="pt-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Your account</h2>
-              <div className="rounded-xl border border-border/70 bg-background/40 px-3 sm:px-5">
+            <CardHeader className="pb-0">
+              <CardTitle className="text-lg">Profile</CardTitle>
+              <CardDescription className="text-muted-foreground">Your RootRecord identity and plan.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-xl border border-border/60 bg-background/30 px-3 sm:px-4">
                 <DetailRow k="Email">{String(me.email || '—')}</DetailRow>
                 <DetailRow k="Your RootRecord ID">
                   <span className="font-mono text-xs break-all">{String(me.account_id || '—')}</span>
@@ -611,99 +653,204 @@ export function AccountPageClient() {
                   )}
                 </DetailRow>
                 <DetailRow k="Password on file">{me.has_password ? 'Yes' : 'No'}</DetailRow>
-                <DetailRow k="Custodial web wallet">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      {custodialPk ? (
-                        <p className="font-mono text-xs break-all text-foreground/95">{custodialPk}</p>
-                      ) : (
-                        <EmptyLine>No wallet yet — create one to hold RRTT and sign on the web.</EmptyLine>
-                      )}
-                      {custodialPk ? (
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          Used for RRTT rewards and optional RootRecord web signing.
-                        </p>
-                      ) : null}
-                    </div>
-                    {!custodialPk ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="shrink-0 self-start sm:self-center"
-                        disabled={busy || linkBusy || genBusy}
-                        onClick={() => void onGenerateCustodialWallet()}
-                      >
-                        {genBusy ? 'Creating…' : 'Generate wallet'}
-                      </Button>
-                    ) : null}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-ink-800/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Balances</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Earn program totals and cached on-chain reads for your custodial wallet (Solana mainnet · Solscan).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <BalanceStat
+                  label="Total RRTT (earn)"
+                  value={
+                    totalEarnUnits != null ? (
+                      <>
+                        {totalEarnUnits.toLocaleString()}{' '}
+                        <span className="text-muted-foreground font-medium text-sm">RRTT</span>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  hint="Lifetime units from the beta earn program."
+                />
+                <BalanceStat
+                  label="Pending to custodial"
+                  value={
+                    pendingUnits != null ? (
+                      <span className={pendingUnits > 0 ? 'text-amber-200/95' : undefined}>
+                        {pendingUnits.toLocaleString()}{' '}
+                        <span className="text-muted-foreground font-medium text-sm">RRTT</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  hint="Not yet sent on-chain from treasury."
+                />
+                <BalanceStat
+                  label="Available to withdraw"
+                  value={
+                    availWithdraw != null ? (
+                      <span className={availWithdraw > 0 ? 'text-sol-green' : undefined}>
+                        {availWithdraw.toLocaleString()}{' '}
+                        <span className="text-muted-foreground font-medium text-sm">RRTT</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  hint="Against custodial on-chain RRTT and ledger limits."
+                />
+                <BalanceStat
+                  label="RRTT in custodial wallet"
+                  value={
+                    onchainRrtt != null ? (
+                      <>
+                        {onchainRrtt.toLocaleString()}{' '}
+                        <span className="text-muted-foreground font-medium text-sm">RRTT</span>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  hint="Cached SPL balance; updates when the daily treasury job runs."
+                />
+                <BalanceStat
+                  label="SOL in custodial wallet"
+                  value={
+                    solSol != null ? (
+                      <>{solSol.toLocaleString(undefined, { maximumFractionDigits: 6 })} SOL</>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  hint="Cached lamports from the same refresh job."
+                />
+              </div>
+              <RewardsProgramNote earn={earn} />
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-ink-800/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Custodial web wallet</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                RootRecord-hosted key for RRTT rewards and optional in-browser signing.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {custodialPk ? (
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <SolscanAddressLink address={custodialPk} />
+                    <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
+                      Send SOL or SPL here to fund fees. Scan the QR from a phone wallet to deposit.
+                    </p>
                   </div>
-                </DetailRow>
-                <DetailRow k="SOL (custodial, cached)">
-                  {solSol != null ? (
-                    <span className="tabular-nums text-foreground">
-                      {solSol.toLocaleString(undefined, { maximumFractionDigits: 6 })} SOL
+                  <div className="flex flex-col items-center gap-2 shrink-0 mx-auto lg:mx-0">
+                    <div className="rounded-xl bg-white p-2.5 shadow-md ring-1 ring-black/5">
+                      <QRCode value={custodialPk} size={168} style={{ height: 'auto', maxWidth: '100%' }} />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground text-center max-w-[11rem] leading-snug">
+                      QR encodes this public address only — not a private key.
                     </span>
-                  ) : (
-                    <EmptyLine>Updates after the treasury sync runs.</EmptyLine>
-                  )}
-                </DetailRow>
-                <DetailRow k="Linked wallet">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      {linkedPk ? (
-                        <>
-                          <p className="font-mono text-xs break-all text-foreground/95">{linkedPk}</p>
-                          {linkedVerified ? (
-                            <p className="text-xs text-muted-foreground">
-                              Verified {formatLinkedVerifiedAt(linkedVerified)}
-                            </p>
-                          ) : null}
-                        </>
-                      ) : (
-                        <EmptyLine>Not linked — connect a header wallet and sign once to attach it.</EmptyLine>
-                      )}
-                      {linkedPk && connectedPk && !linkedMatchesConnected ? (
-                        <p className="text-xs text-amber-200/90 leading-relaxed">
-                          Header wallet ({connectedPk.slice(0, 4)}…{connectedPk.slice(-4)}) is not your linked wallet.
-                          OTC uses the linked address.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <EmptyLine>No wallet yet — create one to hold RRTT and sign on the web.</EmptyLine>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={busy || linkBusy || genBusy}
+                    onClick={() => void onGenerateCustodialWallet()}
+                  >
+                    {genBusy ? 'Creating…' : 'Generate wallet'}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-ink-800/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Linked wallet</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Personal wallet for OTC and verification (connect in the header, link once).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1 space-y-2">
+                  {linkedPk ? (
+                    <>
+                      <SolscanAddressLink address={linkedPk} />
+                      {linkedVerified ? (
+                        <p className="text-xs text-muted-foreground">
+                          Verified {formatLinkedVerifiedAt(linkedVerified)}
                         </p>
                       ) : null}
-                      {!connected && !linkedPk ? (
-                        <p className="text-xs text-muted-foreground">Use the wallet control in the site header first.</p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2 self-start sm:self-center sm:justify-end">
-                      {linkedPk ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={busy || linkBusy || genBusy}
-                          onClick={() => void onUnlinkWallet()}
-                        >
-                          {linkBusy ? 'Working…' : 'Unlink'}
-                        </Button>
-                      ) : null}
-                      {!linkedMatchesConnected ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={busy || linkBusy || genBusy || !connected || !signMessage}
-                          onClick={() => void onLinkWallet()}
-                        >
-                          {linkBusy
-                            ? 'Confirm in wallet…'
-                            : linkedPk
-                              ? 'Link header instead'
-                              : 'Link header wallet'}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                </DetailRow>
-                <DetailRow k="Beta tester rewards">{rewardsBlock(earn)}</DetailRow>
-                <DetailRow k="Rewards & withdrawal history">
-                  <div className="space-y-3 text-xs">
+                    </>
+                  ) : (
+                    <EmptyLine>Not linked — connect a header wallet and sign once to attach it.</EmptyLine>
+                  )}
+                  {linkedPk && connectedPk && !linkedMatchesConnected ? (
+                    <p className="text-xs text-amber-200/90 leading-relaxed">
+                      Header wallet ({connectedPk.slice(0, 4)}…{connectedPk.slice(-4)}) is not your linked wallet. OTC
+                      uses the linked address.
+                    </p>
+                  ) : null}
+                  {!connected && !linkedPk ? (
+                    <p className="text-xs text-muted-foreground">Use the wallet control in the site header first.</p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 self-start lg:justify-end">
+                  {linkedPk ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || linkBusy || genBusy}
+                      onClick={() => void onUnlinkWallet()}
+                    >
+                      {linkBusy ? 'Working…' : 'Unlink'}
+                    </Button>
+                  ) : null}
+                  {!linkedMatchesConnected ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={busy || linkBusy || genBusy || !connected || !signMessage}
+                      onClick={() => void onLinkWallet()}
+                    >
+                      {linkBusy
+                        ? 'Confirm in wallet…'
+                        : linkedPk
+                          ? 'Link header instead'
+                          : 'Link header wallet'}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-ink-800/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Rewards & withdrawal history</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Treasury → custodial credits and on-chain transfers (Solscan links on txs and addresses).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs">
                     <details className="group text-muted-foreground">
                       <summary className="cursor-pointer text-xs hover:text-foreground [&::-webkit-details-marker]:hidden">
                         <span className="underline-offset-2 group-open:underline">What this table shows</span>
@@ -862,43 +1009,47 @@ export function AccountPageClient() {
                         ) : null}
                       </>
                     )}
-                  </div>
-                </DetailRow>
-                <DetailRow k="Withdraw RRTT to">
-                  <div className="space-y-2 max-w-lg">
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Optional payout address if you are not using the linked header wallet. On-chain withdraw flow
-                      is next.
-                    </p>
-                    <Input
-                      value={withdrawDraft}
-                      onChange={(e) => setWithdrawDraft(e.target.value)}
-                      placeholder="Solana address (base58)"
-                      className="font-mono text-xs"
-                      spellCheck={false}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={genBusy || !connected}
-                        onClick={() => onUseConnectedForWithdraw()}
-                      >
-                        Use header wallet
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={genBusy}
-                        onClick={() => void onSaveWithdrawDest()}
-                      >
-                        Save address
-                      </Button>
-                    </div>
-                  </div>
-                </DetailRow>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-ink-800/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Withdraw RRTT to</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Optional payout address if you are not using your linked header wallet. On-chain withdraw flow is
+                next.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2 max-w-lg">
+                <Input
+                  value={withdrawDraft}
+                  onChange={(e) => setWithdrawDraft(e.target.value)}
+                  placeholder="Solana address (base58)"
+                  className="font-mono text-xs"
+                  spellCheck={false}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={genBusy || !connected}
+                    onClick={() => onUseConnectedForWithdraw()}
+                  >
+                    Use header wallet
+                  </Button>
+                  <Button type="button" size="sm" disabled={genBusy} onClick={() => void onSaveWithdrawDest()}>
+                    Save address
+                  </Button>
+                </div>
               </div>
+              {savedWithdrawDest ? (
+                <p className="text-xs text-muted-foreground">
+                  <span className="text-muted-foreground">Saved payout: </span>
+                  <SolscanAddressLink address={savedWithdrawDest} />
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 
