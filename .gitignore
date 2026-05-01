@@ -46,3 +46,6 @@ coverage/
 # Nested Worker mirror under Next app — develop Workers from /cloudflare/rootrecord-primary only
 solana/solanasite/cloudflare/
 solana/solana-rootrecord-site/cloudflare/
+
+# Local clone of production Solana repo (push from here to RootRecord/solana-rootrecord-site; do not commit into Web)
+solana-rootrecord-site-fix/
