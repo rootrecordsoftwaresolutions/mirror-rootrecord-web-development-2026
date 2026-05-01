@@ -15,9 +15,11 @@ import {
   fetchPortalMe,
   formatAccountCreatedAt,
   planLabelFromMe,
+  portalCreateCustodialWallet,
   portalDeleteAccount,
   portalLinkWallet,
   portalLogout,
+  portalSaveWithdrawDest,
   portalUnlinkWallet,
   type EarnSummary,
   type PortalMeData,
@@ -72,7 +74,25 @@ function subscriptionLine(data: PortalMeData): { text: string; showBillingLink: 
   return { text: label, showBillingLink: false };
 }
 
-function rewardsLine(earn: EarnSummary | null): ReactNode {
+function numEarn(earn: EarnSummary | null, k: string): number {
+  if (!earn) return 0;
+  const v = earn[k];
+  return Math.max(0, Math.floor(Number(v) || 0));
+}
+
+function custodialPubFromMe(me: PortalMeData | null): string {
+  const v = me?.custodial_wallet_pubkey;
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+function solCachedLamports(me: PortalMeData | null): number | null {
+  const v = me?.custodial_sol_lamports_cached;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.floor(n) : null;
+}
+
+function rewardsBlock(earn: EarnSummary | null): ReactNode {
   const learn = (
     <a
       href={portalAbsoluteUrl('/beta-tester-rewards.html')}
@@ -90,11 +110,30 @@ function rewardsLine(earn: EarnSummary | null): ReactNode {
       </>
     );
   }
-  const n = Math.max(0, Math.floor(earn.balance));
+  const total = Math.max(0, Math.floor(earn.balance));
+  const pending = numEarn(earn, 'custodial_pending_units');
+  const avail = numEarn(earn, 'custodial_available_withdraw_units');
   return (
-    <>
-      <strong className="tabular-nums text-foreground">{n.toLocaleString()}</strong> {learn}
-    </>
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">
+        Total rewards <strong className="tabular-nums text-foreground">{total.toLocaleString()}</strong>
+      </p>
+      {pending > 0 ? (
+        <p className="text-xs">
+          <span className="text-muted-foreground">Pending (treasury → custodial):</span>{' '}
+          <strong className="tabular-nums text-amber-200/90">{pending.toLocaleString()}</strong>
+        </p>
+      ) : null}
+      {avail > 0 ? (
+        <p className="text-xs">
+          <span className="text-muted-foreground">Available in custodial wallet:</span>{' '}
+          <strong className="tabular-nums text-sol-green">{avail.toLocaleString()}</strong>
+        </p>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        RRTT is pushed from treasury to your custodial wallet on a daily schedule when configured. {learn}
+      </p>
+    </div>
   );
 }
 
@@ -115,6 +154,8 @@ export function AccountPageClient() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
+  const [genBusy, setGenBusy] = useState(false);
+  const [withdrawDraft, setWithdrawDraft] = useState('');
   const [me, setMe] = useState<PortalMeData | null>(null);
   const [earn, setEarn] = useState<EarnSummary | null>(null);
   const hasApi = Boolean(getRootRecordApiBase());
@@ -150,6 +191,8 @@ export function AccountPageClient() {
     const e = await fetchEarnSummary(token);
     setMe(r.data);
     setEarn(e);
+    const wd = r.data?.withdraw_dest_pubkey;
+    setWithdrawDraft(typeof wd === 'string' ? wd : '');
     syncPortalLifetimeFromMe(r.data);
     setPhase('account');
   }, [hasApi]);
@@ -315,11 +358,58 @@ export function AccountPageClient() {
     await loadAccount();
   }
 
+  async function onGenerateCustodialWallet() {
+    const token = getPortalToken();
+    if (!token || !me) {
+      applyStatus('You are not signed in.', 'warn');
+      return;
+    }
+    setGenBusy(true);
+    applyStatus('', '');
+    const r = await portalCreateCustodialWallet(token);
+    setGenBusy(false);
+    if (!r.ok) {
+      applyStatus(r.detail, 'err');
+      return;
+    }
+    toast.success('Custodial wallet ready');
+    await loadAccount();
+  }
+
+  async function onSaveWithdrawDest() {
+    const token = getPortalToken();
+    if (!token) {
+      applyStatus('You are not signed in.', 'warn');
+      return;
+    }
+    setGenBusy(true);
+    const trimmed = withdrawDraft.trim();
+    const r = await portalSaveWithdrawDest(token, trimmed || null);
+    setGenBusy(false);
+    if (!r.ok) {
+      applyStatus(r.detail, 'err');
+      return;
+    }
+    toast.success('Withdrawal address saved');
+    await loadAccount();
+  }
+
+  function onUseConnectedForWithdraw() {
+    if (!publicKey) {
+      toast.error('Connect a wallet in the header first');
+      return;
+    }
+    setWithdrawDraft(publicKey.toBase58());
+  }
+
   const sub = me ? subscriptionLine(me) : { text: '', showBillingLink: false };
   const linkedPk = me ? linkedWalletFromMe(me) : '';
   const linkedVerified = me ? linkedVerifiedFromMe(me) : '';
   const connectedPk = publicKey?.toBase58() ?? '';
   const linkedMatchesConnected = Boolean(linkedPk && connectedPk && linkedPk === connectedPk);
+  const custodialPk = custodialPubFromMe(me);
+  const solLamports = solCachedLamports(me);
+  const solSol = solLamports != null ? solLamports / 1e9 : null;
 
   return (
     <div className="container py-8 md:py-12 max-w-2xl">
@@ -435,6 +525,35 @@ export function AccountPageClient() {
                   )}
                 </DetailRow>
                 <DetailRow k="Password on file">{me.has_password ? 'Yes' : 'No'}</DetailRow>
+                <DetailRow k="Custodial web wallet">
+                  <div className="space-y-2">
+                    <div className="font-mono text-xs break-all">{custodialPk || '—'}</div>
+                    {!custodialPk ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={busy || linkBusy || genBusy}
+                        onClick={() => void onGenerateCustodialWallet()}
+                      >
+                        {genBusy ? 'Creating…' : 'Generate wallet'}
+                      </Button>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Created with your account (or on signup). Used for RRTT rewards and optional RootRecord (web)
+                        signing.
+                      </p>
+                    )}
+                  </div>
+                </DetailRow>
+                <DetailRow k="SOL on custodial (cached)">
+                  {solSol != null ? (
+                    <span className="tabular-nums">
+                      {solSol.toLocaleString(undefined, { maximumFractionDigits: 6 })} SOL
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">— (updated after treasury sync)</span>
+                  )}
+                </DetailRow>
                 <DetailRow k="Linked wallet">
                   <div className="space-y-2">
                     <div className="font-mono text-xs break-all">{linkedPk || '—'}</div>
@@ -455,7 +574,7 @@ export function AccountPageClient() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={busy || linkBusy}
+                          disabled={busy || linkBusy || genBusy}
                           onClick={() => void onUnlinkWallet()}
                         >
                           {linkBusy ? 'Working…' : 'Unlink'}
@@ -465,7 +584,7 @@ export function AccountPageClient() {
                         <Button
                           type="button"
                           size="sm"
-                          disabled={busy || linkBusy || !connected || !signMessage}
+                          disabled={busy || linkBusy || genBusy || !connected || !signMessage}
                           onClick={() => void onLinkWallet()}
                         >
                           {linkBusy
@@ -483,7 +602,41 @@ export function AccountPageClient() {
                     ) : null}
                   </div>
                 </DetailRow>
-                <DetailRow k="Beta tester rewards">{rewardsLine(earn)}</DetailRow>
+                <DetailRow k="Beta tester rewards">{rewardsBlock(earn)}</DetailRow>
+                <DetailRow k="Withdraw RRTT to">
+                  <div className="space-y-2 max-w-md">
+                    <p className="text-xs text-muted-foreground">
+                      If you do not use a linked header wallet, enter any Solana address to receive RRTT when you
+                      withdraw from your custodial balance (on-chain withdrawal flow coming next).
+                    </p>
+                    <Input
+                      value={withdrawDraft}
+                      onChange={(e) => setWithdrawDraft(e.target.value)}
+                      placeholder="Solana address (base58)"
+                      className="font-mono text-xs"
+                      spellCheck={false}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={genBusy || !connected}
+                        onClick={() => onUseConnectedForWithdraw()}
+                      >
+                        Use header wallet
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={genBusy}
+                        onClick={() => void onSaveWithdrawDest()}
+                      >
+                        Save address
+                      </Button>
+                    </div>
+                  </div>
+                </DetailRow>
               </div>
             </CardContent>
           </Card>
@@ -495,13 +648,18 @@ export function AccountPageClient() {
                 Deleting your account permanently removes your RootRecord portal profile and any server-stored data tied
                 to it (saved locations, notifications).
               </p>
-              <Button type="button" variant="outline" disabled={busy || linkBusy} onClick={() => void onDeleteAccount()}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || linkBusy || genBusy}
+                onClick={() => void onDeleteAccount()}
+              >
                 Delete account
               </Button>
             </CardContent>
           </Card>
 
-          <Button type="button" variant="outline" disabled={busy || linkBusy} onClick={() => void onLogout()}>
+          <Button type="button" variant="outline" disabled={busy || linkBusy || genBusy} onClick={() => void onLogout()}>
             Sign out
           </Button>
         </div>

@@ -16,7 +16,12 @@ import { handlePrefsRoutes } from "./prefs";
 import { handleEarnRoutes } from "./earn";
 import { handleBusinessRoutes, handleBusinessAuthEntitlement, bmWipeOwnedRows } from "./business-mobile";
 import { handleFeedbackRoute } from "./feedback-route";
-import { handleSolanaInternalWalletRoutes } from "./solana-internal-wallet";
+import {
+  handleCustodialSolWalletV1,
+  handleCustodialWithdrawDestV1,
+  handleSolanaInternalWalletRoutes,
+  provisionCustodialWalletIfMissing,
+} from "./solana-internal-wallet";
 import { handleSolanaSiteLogRoute } from "./solana-site-log";
 import { handleSolanaSiteTokenDiscordNotifyRoute } from "./solana-site-token-discord-notify";
 import { handleSolanaSiteEcosystemOtcRoutes } from "./solana-site-ecosystem-otc";
@@ -128,6 +133,15 @@ export interface Env {
   RESEND_API_KEY?: string;
 
   RESEND_FROM?: string;
+
+  /** Solana RPC for custodial RRTT cron (default mainnet-beta). */
+  SOLANA_RPC_URL?: string;
+  /** SPL mint (base58) for RRTT treasury → custodial transfers. */
+  RRTT_MINT_BASE58?: string;
+  /** Mint decimals for transfer_checked (default 0 = whole units match rr_earn integers). */
+  RRTT_DECIMALS?: string;
+  /** Treasury keypair secret key base58 (same encoding as Phantom export). */
+  RRTT_TREASURY_SECRET_KEY_B58?: string;
 
 }
 
@@ -347,6 +361,18 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
       }
 
+      try {
+
+        const aid = String(data.account_id || "").trim();
+
+        if (aid) await provisionCustodialWalletIfMissing(env, aid);
+
+      } catch {
+
+        /* non-fatal */
+
+      }
+
       return json(data, 200);
 
     }
@@ -370,6 +396,18 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (pathname === "/v1/me/linked-wallet") {
 
       return handleSolanaLinkedWalletRoute(request, env, method);
+
+    }
+
+    if (pathname === "/v1/me/custodial-sol-wallet" || pathname.startsWith("/v1/me/custodial-sol-wallet/")) {
+
+      return handleCustodialSolWalletV1(request, env, method, pathname);
+
+    }
+
+    if (pathname === "/v1/me/custodial-withdraw-dest") {
+
+      return handleCustodialWithdrawDestV1(request, env, method);
 
     }
 
@@ -406,6 +444,8 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           env.DB.prepare("DELETE FROM license_email_change WHERE account_id = ?").bind(accountId),
 
           env.DB.prepare("DELETE FROM solana_linked_wallets WHERE account_id = ?").bind(accountId),
+
+          env.DB.prepare("DELETE FROM rr_earn_custodial_state WHERE account_id = ?").bind(accountId),
 
           env.DB.prepare("DELETE FROM internal_solana_wallets WHERE account_id = ?").bind(accountId),
 
@@ -519,6 +559,14 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
     const tok = auth.slice(7).trim();
     return authMe(env, tok);
+  }
+
+  if (sub === "/v1/me/custodial-withdraw-dest") {
+    return handleCustodialWithdrawDestV1(request, env, method);
+  }
+
+  if (sub === "/v1/me/custodial-sol-wallet" || sub.startsWith("/v1/me/custodial-sol-wallet/")) {
+    return handleCustodialSolWalletV1(request, env, method, sub);
   }
 
   if (method === "GET" && (pathname === "/api" || pathname === "/api/")) {
@@ -719,6 +767,18 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     } catch {
 
       /* D1 optional */
+
+    }
+
+    try {
+
+      const aid = String(data.account_id || "").trim();
+
+      if (aid) await provisionCustodialWalletIfMissing(env, aid);
+
+    } catch {
+
+      /* non-fatal */
 
     }
 

@@ -2,6 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { json } from "./cors";
 import { resolveUserId } from "./auth";
 import { getSignupBonusRow, SIGNUP_BONUS_UNITS } from "./earn-signup-bonus";
+import { sessionFromBearer } from "./primary-auth";
 
 export interface EarnEnv {
   DB: D1Database;
@@ -146,9 +147,47 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
   const wouldGrant = Math.min(DAILY_CHECKIN_UNITS, checkinLeft);
   const signupRow = await getSignupBonusRow(env.DB, userId);
 
+  let custodial_pending_units = 0;
+  let custodial_units_sent = 0;
+  let custodial_available_withdraw_units = 0;
+  let custodial_onchain_rrtt: number | null = null;
+  try {
+    const auth = request.headers.get("Authorization") || "";
+    if (auth.toLowerCase().startsWith("bearer ") && env.JWT_SECRET) {
+      const sess = await sessionFromBearer(env, auth.slice(7).trim());
+      if (sess) {
+        const st = await env.DB
+          .prepare(
+            `SELECT IFNULL(cs.units_sent_to_custodial, 0) AS sent,
+                    IFNULL(cs.units_withdrawn_from_custodial, 0) AS withdrawn,
+                    cs.custodial_rrtt_onchain AS onchain
+             FROM rr_earn_custodial_state cs
+             WHERE cs.account_id = ?`,
+          )
+          .bind(sess.accountId)
+          .first<{ sent: number; withdrawn: number; onchain: number | null }>();
+        const sent = Math.max(0, Math.floor(Number(st?.sent) || 0));
+        const withdrawn = Math.max(0, Math.floor(Number(st?.withdrawn) || 0));
+        const onchain = st?.onchain != null ? Math.max(0, Math.floor(Number(st.onchain) || 0)) : null;
+        custodial_units_sent = sent;
+        custodial_pending_units = Math.max(0, balance - sent);
+        const availLedger = Math.max(0, sent - withdrawn);
+        custodial_available_withdraw_units = onchain != null ? Math.min(availLedger, onchain) : availLedger;
+        custodial_onchain_rrtt = onchain;
+      }
+    }
+  } catch {
+    /* rr_earn_custodial_state may be missing */
+  }
+
   return json(
     {
       balance,
+      custodial_pending_units,
+      custodial_units_sent,
+      custodial_available_withdraw_units,
+      custodial_onchain_rrtt,
+      total_rewards_units: balance,
       signup_bonus: {
         one_time_across_apps: true,
         program_units: SIGNUP_BONUS_UNITS,

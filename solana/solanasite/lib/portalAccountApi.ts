@@ -152,6 +152,45 @@ export async function portalLinkWallet(
   return { ok: true };
 }
 
+export async function portalCreateCustodialWallet(
+  token: string,
+): Promise<{ ok: true } | { ok: false; status: number; detail: string }> {
+  const base = getRootRecordApiBase();
+  if (!base) return { ok: false, status: 503, detail: 'Account API is not configured.' };
+  const res = await fetch(`${base}/v1/me/custodial-sol-wallet`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const { j } = await parsePortalJson(res);
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      detail: friendlyPortalApiError(j) || 'Could not create custodial wallet.',
+    };
+  }
+  return { ok: true };
+}
+
+export async function portalSaveWithdrawDest(
+  token: string,
+  withdraw_dest_pubkey: string | null,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  const base = getRootRecordApiBase();
+  if (!base) return { ok: false, detail: 'Account API is not configured.' };
+  const res = await fetch(`${base}/v1/me/custodial-withdraw-dest`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ withdraw_dest_pubkey }),
+  });
+  const { j } = await parsePortalJson(res);
+  if (!res.ok) {
+    return { ok: false, detail: friendlyPortalApiError(j) || 'Could not save withdrawal address.' };
+  }
+  return { ok: true };
+}
+
 export async function portalUnlinkWallet(
   token: string,
 ): Promise<{ ok: true } | { ok: false; detail: string }> {

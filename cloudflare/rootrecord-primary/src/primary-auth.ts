@@ -610,6 +610,44 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
 
   }
 
+  let custodial_wallet_pubkey: string | null = null;
+
+  let withdraw_dest_pubkey: string | null = null;
+
+  let custodial_sol_lamports_cached: number | null = null;
+
+  try {
+
+    const cw = await env.DB
+
+      .prepare(
+
+        `SELECT iw.pubkey AS cpk, cs.withdraw_dest_pubkey AS wdp, cs.sol_balance_lamports_cached AS solc
+
+         FROM internal_solana_wallets iw
+
+         LEFT JOIN rr_earn_custodial_state cs ON cs.account_id = iw.account_id
+
+         WHERE iw.account_id = ?`,
+
+      )
+
+      .bind(sess.accountId)
+
+      .first<{ cpk: string; wdp: string | null; solc: number | null }>();
+
+    if (cw?.cpk) custodial_wallet_pubkey = cw.cpk;
+
+    if (cw?.wdp) withdraw_dest_pubkey = cw.wdp;
+
+    if (cw?.solc != null && Number.isFinite(Number(cw.solc))) custodial_sol_lamports_cached = Math.floor(Number(cw.solc));
+
+  } catch {
+
+    /* tables may be missing */
+
+  }
+
   return json(
 
     {
@@ -641,6 +679,12 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
       linked_wallet_pubkey,
 
       linked_wallet_verified_at,
+
+      custodial_wallet_pubkey,
+
+      withdraw_dest_pubkey,
+
+      custodial_sol_lamports_cached,
 
       apps,
 
