@@ -124,23 +124,3 @@ export function RootRecordAuthDialog() {
     </Dialog>
   );
 }
-
-/** Renders a control that opens the same dialog (e.g. header). */
-export function AccountSignInButton() {
-  const [hasApi, setHasApi] = useState(false);
-  useEffect(() => {
-    setHasApi(Boolean(getRootRecordApiBase()));
-  }, []);
-  if (!hasApi) return null;
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      className="text-muted-foreground hover:text-foreground h-8 text-xs"
-      onClick={() => emitCustodialNeedsAuth()}
-    >
-      Account sign-in
-    </Button>
-  );
-}

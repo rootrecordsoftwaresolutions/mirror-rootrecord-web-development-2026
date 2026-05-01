@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { WalletMultiButton } from '@/components/wallet/WalletButton';
 import { ReferralPill } from '@/components/ReferralPill';
-import { AccountSignInButton } from '@/components/RootRecordAuthDialog';
+import { RootRecordPortalNav } from '@/components/RootRecordPortalNav';
 
 const NAV = [
   { href: '/start', label: 'Start here' },
@@ -71,7 +71,7 @@ export function Header() {
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <ReferralPill />
-          <AccountSignInButton />
+          <RootRecordPortalNav />
           <Button
             type="button"
             variant="ghost"
