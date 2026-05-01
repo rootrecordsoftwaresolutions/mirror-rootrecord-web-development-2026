@@ -925,6 +925,7 @@ export default function EcosystemPage() {
             <p>
               Paying with USDC matches with USDC/RRTT. Paying with SOL matches with SOL/RRTT.
             </p>
+            <p>Holders are welcome to utilize this tool for market arbitrage.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Button type="button" variant="outline" size="sm" onClick={() => void refreshPrices()}>
