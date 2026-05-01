@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { JupiterWalletPromo } from '@/components/JupiterWalletPromo';
+import { RrttTokenStatsPromo } from '@/components/RrttTokenStatsPromo';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 
@@ -184,9 +185,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* WALLET — Jupiter (partner-style recommendation) */}
-      <section className="container pt-4 pb-16 md:pt-2 md:pb-20" aria-labelledby="jupiter-wallet-heading">
-        <JupiterWalletPromo variant="featured" />
+      {/* WALLET + RRTT stats */}
+      <section
+        className="container pt-4 pb-16 md:pt-2 md:pb-20"
+        aria-labelledby="jupiter-wallet-heading"
+      >
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-stretch">
+          <JupiterWalletPromo variant="featured" />
+          <RrttTokenStatsPromo />
+        </div>
       </section>
 
       {/* FEATURES */}
