@@ -6,25 +6,19 @@ import {
   ECOSYSTEM_OTC_TOKEN_MINT,
   ecosystemOtcQuoteAmountForLpDeposit,
   ecosystemOtcUsdcMint,
+  resolveOtcCpmmPoolId,
 } from '@/lib/ecosystemOtcConstants';
 import {
   addCpmmLiquidityWithKeypair,
+  coerceRaydiumPoolByIdList,
   isCpmmPoolItem,
   loadRaydiumForKeypair,
 } from '@/lib/raydiumCpmmLaunch';
 
-function otcCpmmPoolId(): string {
-  return (
-    process.env.ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
-    process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
-    ''
-  );
-}
-
 /**
- * Deposit the treasury transfer quote payment (SOL or USDC) into the configured Raydium CPMM pool from the
- * treasury keypair, pairing with project token per pool price (Raydium SDK). A configurable
- * share of the quote stays in treasury (default 1%) for fees and later LP.
+ * Deposit the treasury transfer quote payment (SOL or USDC) into the Raydium CPMM pool that matches
+ * the payment rail (WSOL pool vs USDC pool), from the treasury keypair. A configurable share of the
+ * quote stays in treasury (default 1%) for fees and later LP.
  */
 export async function depositOtcPaymentToCpmmPool(params: {
   treasury: Keypair;
@@ -35,16 +29,22 @@ export async function depositOtcPaymentToCpmmPool(params: {
   /** USDC raw units received by treasury. */
   receivedUsdc: bigint;
 }): Promise<{ txId: string }> {
-  const poolId = otcCpmmPoolId();
+  const poolId = resolveOtcCpmmPoolId(params.payWith);
   if (!poolId) {
-    throw new Error('ECOSYSTEM_OTC_CPMM_POOL_ID is not set');
+    const hint =
+      params.payWith === 'SOL'
+        ? 'Set ECOSYSTEM_OTC_CPMM_POOL_ID_SOL or legacy ECOSYSTEM_OTC_CPMM_POOL_ID (WSOL pair).'
+        : 'Set ECOSYSTEM_OTC_CPMM_POOL_ID_USDC or legacy ECOSYSTEM_OTC_CPMM_POOL_ID (USDC pair).';
+    throw new Error(`OTC CPMM pool id is not set for ${params.payWith} deposits. ${hint}`);
   }
 
   const tokenMint = params.tokenMint.trim();
   const quoteMint = params.payWith === 'SOL' ? NATIVE_MINT.toBase58() : ecosystemOtcUsdcMint();
 
   const { raydium } = await loadRaydiumForKeypair(params.treasury);
-  const list = await raydium.api.fetchPoolById({ ids: poolId });
+  const list = coerceRaydiumPoolByIdList(
+    await raydium.api.fetchPoolById({ ids: poolId }),
+  );
   const poolInfo = list.find(isCpmmPoolItem);
   if (!poolInfo) {
     throw new Error('Treasury transfer pool id is not a Raydium CPMM pool on this cluster');

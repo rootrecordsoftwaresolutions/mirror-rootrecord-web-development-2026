@@ -43,6 +43,17 @@ import {
 
 type LiqTab = 'create' | 'add' | 'remove';
 
+function poolMintShortLabel(
+  mint: { symbol?: string; address?: string } | undefined,
+  fallback: string,
+): string {
+  const sym = mint?.symbol?.trim();
+  if (sym) return sym;
+  const addr = mint?.address?.trim();
+  if (addr && addr.length > 10) return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
+  return fallback;
+}
+
 function LiquidityPageInner() {
   const params = useSearchParams();
   const wallet = useWallet();
@@ -353,8 +364,8 @@ function LiquidityPageInner() {
 
   const addAmountLabel = loadedPool
     ? addBaseIn
-      ? `${loadedPool.mintA.symbol} amount to deposit (mint A)`
-      : `${loadedPool.mintB.symbol} amount to deposit (mint B)`
+      ? `${poolMintShortLabel(loadedPool.mintA, 'Mint A')} amount to deposit (mint A)`
+      : `${poolMintShortLabel(loadedPool.mintB, 'Mint B')} amount to deposit (mint B)`
     : 'Amount to deposit (human units)';
 
   const tabToggle = (
@@ -640,11 +651,13 @@ function LiquidityPageInner() {
                   <div className="rounded-lg border border-border bg-ink-700/30 p-3 text-xs font-mono text-muted-foreground space-y-1">
                     <div>
                       <span className="text-foreground/80">Mint A:</span>{' '}
-                      {loadedPool.mintA.symbol} · {loadedPool.mintA.address}
+                      {poolMintShortLabel(loadedPool.mintA, 'Mint A')} ·{' '}
+                      {loadedPool.mintA?.address ?? '—'}
                     </div>
                     <div>
                       <span className="text-foreground/80">Mint B:</span>{' '}
-                      {loadedPool.mintB.symbol} · {loadedPool.mintB.address}
+                      {poolMintShortLabel(loadedPool.mintB, 'Mint B')} ·{' '}
+                      {loadedPool.mintB?.address ?? '—'}
                     </div>
                   </div>
 
@@ -658,10 +671,10 @@ function LiquidityPageInner() {
                       onChange={(e) => setAddBaseIn(e.target.value === 'a')}
                     >
                       <option value="a">
-                        {loadedPool.mintA.symbol} (mint A)
+                        {poolMintShortLabel(loadedPool.mintA, 'Mint A')} (mint A)
                       </option>
                       <option value="b">
-                        {loadedPool.mintB.symbol} (mint B)
+                        {poolMintShortLabel(loadedPool.mintB, 'Mint B')} (mint B)
                       </option>
                     </select>
                   </div>
@@ -693,22 +706,24 @@ function LiquidityPageInner() {
                   <div className="rounded-lg border border-border bg-ink-700/30 p-3 text-xs font-mono text-muted-foreground space-y-1">
                     <div>
                       <span className="text-foreground/80">LP mint:</span>{' '}
-                      {loadedPool.lpMint.symbol} · {loadedPool.lpMint.address}
+                      {poolMintShortLabel(loadedPool.lpMint, 'LP')} ·{' '}
+                      {loadedPool.lpMint?.address ?? '—'}
                     </div>
                     <div>
                       <span className="text-foreground/80">Mint A / B:</span>{' '}
-                      {loadedPool.mintA.symbol} / {loadedPool.mintB.symbol}
+                      {poolMintShortLabel(loadedPool.mintA, 'A')} /{' '}
+                      {poolMintShortLabel(loadedPool.mintB, 'B')}
                     </div>
                   </div>
 
                   <div className="grid gap-2">
                     <Label htmlFor="liq-remove-lp-amt">
-                      LP tokens to burn ({loadedPool.lpMint.symbol})
+                      LP tokens to burn ({poolMintShortLabel(loadedPool.lpMint, 'LP')})
                     </Label>
                     <Input
                       id="liq-remove-lp-amt"
                       data-testid="remove-liq-amount"
-                      placeholder={`Human amount (${loadedPool.lpMint.decimals} decimals)`}
+                      placeholder={`Human amount (${Number.isFinite(loadedPool.lpMint?.decimals) ? loadedPool.lpMint.decimals : 9} decimals)`}
                       value={removeLpAmount}
                       onChange={(e) => setRemoveLpAmount(e.target.value)}
                     />

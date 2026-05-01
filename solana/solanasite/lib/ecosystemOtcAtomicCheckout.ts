@@ -20,15 +20,13 @@ import { ecosystemOtcMemoInstruction } from '@/lib/ecosystemOtcClientPayment';
 import { computeOtcPayAmounts } from '@/lib/ecosystemOtcCompute';
 import {
   ECOSYSTEM_OTC_TOKEN_MINT,
-  ecosystemOtcUsdcAutoLpEnabled,
-  ecosystemOtcUsdcLpResumeLabel,
   ecosystemOtcUsdcMint,
+  resolveOtcCpmmPoolId,
 } from '@/lib/ecosystemOtcConstants';
 import { depositOtcPaymentToCpmmPool } from '@/lib/ecosystemOtcAutoLiquidity';
 import { fetchJupiterSolUsdcUsd } from '@/lib/ecosystemJupUsd';
 import {
   loadTreasuryKeypair,
-  logUsdcDeferredSeedLedger,
   verifyOtcPaymentTx,
   workerOtcComplete,
   workerOtcLiquidityMeta,
@@ -411,21 +409,9 @@ export async function finalizeOtcAtomicCheckout(
   let liquidity_tx: string | null = null;
   let liquidity_error: string | null = null;
   let liquidity_notice: string | null = null;
-  const poolIdEnv =
-    process.env.ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
-    process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID?.trim();
+  const poolIdForPay = resolveOtcCpmmPoolId(input.pay_with);
 
-  const skipUsdcLp = input.pay_with === 'USDC' && !ecosystemOtcUsdcAutoLpEnabled();
-  if (skipUsdcLp) {
-    liquidity_notice = `USDC auto-liquidity is paused until the USDC CPMM pair is live (target ${ecosystemOtcUsdcLpResumeLabel()}). This payment stays in treasury and is logged for the initial pool seed.`;
-    void logUsdcDeferredSeedLedger({
-      payment_tx: sig,
-      fulfill_tx: sig,
-      buyer: buyer.toBase58(),
-      mint: mintPk.toBase58(),
-      usdc_micro: receivedUsdc.toString(),
-    });
-  } else if (poolIdEnv) {
+  if (poolIdForPay) {
     try {
       const lp = await depositOtcPaymentToCpmmPool({
         treasury,
@@ -439,8 +425,11 @@ export async function finalizeOtcAtomicCheckout(
       liquidity_error = err instanceof Error ? err.message : 'add liquidity failed';
     }
   } else {
-    liquidity_notice =
-      'Auto pool deposit skipped: ECOSYSTEM_OTC_CPMM_POOL_ID (or NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID) is not set on the server. SOL/USDC from treasury transfers stays in the treasury until you configure the pool id.';
+    const poolHint =
+      input.pay_with === 'SOL'
+        ? 'Set ECOSYSTEM_OTC_CPMM_POOL_ID_SOL (or legacy ECOSYSTEM_OTC_CPMM_POOL_ID) for the WSOL pair.'
+        : 'Set ECOSYSTEM_OTC_CPMM_POOL_ID_USDC (or legacy ECOSYSTEM_OTC_CPMM_POOL_ID) for the USDC pair.';
+    liquidity_notice = `Auto pool deposit skipped: no pool id for this payment rail. ${poolHint} Quote stays in treasury until configured.`;
   }
 
   const quoteReceivedRaw =

@@ -19,13 +19,12 @@ import {
   ECOSYSTEM_OTC_TOKEN_MINT,
   ECOSYSTEM_LISTING_NAME,
   ECOSYSTEM_LISTING_SYMBOL,
-  ECOSYSTEM_SOLSCAN_CPMM_POOL,
+  ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL,
+  ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC,
   ECOSYSTEM_SOLSCAN_DEVELOPER,
   ECOSYSTEM_SOLSCAN_TREASURY,
   OTC_USD_PER_TOKEN,
   ecosystemOtcQuoteRetainPercentLabel,
-  ecosystemOtcUsdcAutoLpEnabled,
-  ecosystemOtcUsdcLpResumeLabel,
   solscanAccount,
   solscanToken,
 } from '@/lib/ecosystemOtcConstants';
@@ -651,17 +650,36 @@ export default function EcosystemPage() {
               </li>
               <li>
                 <a
-                  href={solscanAccount(ECOSYSTEM_SOLSCAN_CPMM_POOL)}
+                  href={solscanAccount(ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sol-green hover:underline font-medium"
                 >
-                  Liquidity pool (Raydium CPMM)
+                  Liquidity pool — SOL (WSOL)
                 </a>{' '}
-                <span className="font-mono text-xs text-foreground/80">({ECOSYSTEM_SOLSCAN_CPMM_POOL})</span>
+                <span className="font-mono text-xs text-foreground/80">
+                  ({ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL})
+                </span>
                 {' — '}
-                public pool where paired {ECOSYSTEM_LISTING_SYMBOL} + quote trade.
+                Raydium CPMM where treasury SOL buys add paired liquidity.
               </li>
+              {ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC ? (
+                <li>
+                  <a
+                    href={solscanAccount(ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sol-green hover:underline font-medium"
+                  >
+                    Liquidity pool — USDC
+                  </a>{' '}
+                  <span className="font-mono text-xs text-foreground/80">
+                    ({ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC})
+                  </span>
+                  {' — '}
+                  Raydium CPMM where treasury USDC buys add paired liquidity.
+                </li>
+              ) : null}
               <li>
                 <a
                   href={solscanAccount(ECOSYSTEM_SOLSCAN_DEVELOPER)}
@@ -752,10 +770,10 @@ export default function EcosystemPage() {
             <p>
               On each treasury transfer, received SOL/USDC is split for automation: about{' '}
               <strong className="text-foreground">{ecosystemOtcQuoteRetainPercentLabel()}</strong> of
-              the quote can remain in treasury for fees, reserves, and stabilization; the rest
-              follows the deployment&apos;s CPMM add-liquidity path (see site notices for USDC seed
-              windows). Numbers are enforced on-chain and in worker logic—not a promise of a fixed
-              APY.
+              the quote can remain in treasury for fees, reserves, and stabilization; the rest is
+              added to the Raydium CPMM pool that matches how you paid (WSOL pair for SOL, USDC pair
+              for USDC)—both pools are live. Numbers are enforced on-chain and in worker logic—not a
+              promise of a fixed APY.
             </p>
             <p className="text-xs text-muted-foreground/90 border-t border-border/60 pt-4">
               Mint (Solscan):{' '}
@@ -778,7 +796,8 @@ export default function EcosystemPage() {
           <CardDescription className="leading-relaxed">
             <span className="block">Purchase tokens directly from the treasury.</span>
             <span className="block mt-1.5">
-              RootRecord matches your transfer into the liquidity pool automatically.
+              Both Raydium CPMM pools (SOL and USDC) are live—your payment is matched into the pool
+              for the asset you paid with.
             </span>
           </CardDescription>
         </CardHeader>
@@ -840,13 +859,6 @@ export default function EcosystemPage() {
               <option value="USDC">USDC</option>
             </select>
           </div>
-          {payWith === 'USDC' && !ecosystemOtcUsdcAutoLpEnabled() ? (
-            <p className="text-sm text-muted-foreground leading-relaxed rounded-md border border-border bg-ink-700/20 px-3 py-2">
-              USDC pool-side deposits are paused until the USDC CPMM LP exists. Until{' '}
-              <strong className="text-foreground">{ecosystemOtcUsdcLpResumeLabel()}</strong>, your
-              USDC payment is held for the initial seed; token delivery still runs as usual.
-            </p>
-          ) : null}
           <div className="rounded-lg border border-border bg-ink-700/30 px-4 py-3 text-sm space-y-1">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Tokens (rounded up)</span>

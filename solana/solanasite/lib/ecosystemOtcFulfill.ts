@@ -17,9 +17,8 @@ import bs58 from 'bs58';
 
 import {
   ECOSYSTEM_OTC_TOKEN_MINT,
-  ecosystemOtcUsdcAutoLpEnabled,
-  ecosystemOtcUsdcLpResumeLabel,
   ecosystemOtcUsdcMint,
+  resolveOtcCpmmPoolId,
 } from '@/lib/ecosystemOtcConstants';
 import { depositOtcPaymentToCpmmPool } from '@/lib/ecosystemOtcAutoLiquidity';
 import { computeOtcPayAmounts } from '@/lib/ecosystemOtcCompute';
@@ -233,34 +232,6 @@ export async function workerOtcLiquidityMeta(body: {
     });
   } catch {
     /* optional */
-  }
-}
-
-/** Ledger USDC for initial seed (D1 bot feed); best-effort. */
-export async function logUsdcDeferredSeedLedger(params: {
-  payment_tx: string;
-  fulfill_tx: string;
-  buyer: string;
-  mint: string;
-  usdc_micro: string;
-}): Promise<void> {
-  try {
-    const res = await fetchSolanaWorker('/api/solana-site/ecosystem-bot-event', {
-      bot_id: 'otc',
-      event_type: 'usdc_deferred_seed',
-      mint: params.mint,
-      tx_signature: params.fulfill_tx,
-      amount_quote_raw: params.usdc_micro,
-      quote_currency: 'USDC',
-      metadata: {
-        payment_tx: params.payment_tx,
-        buyer: params.buyer,
-        programme: 'initial_seed_pre_lp',
-      },
-    });
-    if (!res.ok) return;
-  } catch {
-    /* optional telemetry */
   }
 }
 
@@ -498,21 +469,9 @@ export async function fulfillOtcFromTreasury(input: FulfillOtcInput): Promise<Fu
     let liquidity_tx: string | null = null;
     let liquidity_error: string | null = null;
     let liquidity_notice: string | null = null;
-    const poolIdEnv =
-      process.env.ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
-      process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID?.trim();
+    const poolIdForPay = resolveOtcCpmmPoolId(input.pay_with);
 
-    const skipUsdcLp = input.pay_with === 'USDC' && !ecosystemOtcUsdcAutoLpEnabled();
-    if (skipUsdcLp) {
-      liquidity_notice = `USDC auto-liquidity is paused until the USDC CPMM pair is live (target ${ecosystemOtcUsdcLpResumeLabel()}). This payment stays in treasury and is logged for the initial pool seed.`;
-      void logUsdcDeferredSeedLedger({
-        payment_tx: sig,
-        fulfill_tx: outSig,
-        buyer: buyer.toBase58(),
-        mint: mintPk.toBase58(),
-        usdc_micro: receivedUsdc.toString(),
-      });
-    } else if (poolIdEnv) {
+    if (poolIdForPay) {
       try {
         const lp = await depositOtcPaymentToCpmmPool({
           treasury,
@@ -526,8 +485,11 @@ export async function fulfillOtcFromTreasury(input: FulfillOtcInput): Promise<Fu
         liquidity_error = err instanceof Error ? err.message : 'add liquidity failed';
       }
     } else {
-      liquidity_notice =
-        'Auto pool deposit skipped: ECOSYSTEM_OTC_CPMM_POOL_ID (or NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID) is not set on the server. SOL/USDC from treasury transfers stays in the treasury until you configure the pool id.';
+      const poolHint =
+        input.pay_with === 'SOL'
+          ? 'Set ECOSYSTEM_OTC_CPMM_POOL_ID_SOL (or legacy ECOSYSTEM_OTC_CPMM_POOL_ID) for the WSOL pair.'
+          : 'Set ECOSYSTEM_OTC_CPMM_POOL_ID_USDC (or legacy ECOSYSTEM_OTC_CPMM_POOL_ID) for the USDC pair.';
+      liquidity_notice = `Auto pool deposit skipped: no pool id for this payment rail. ${poolHint} Quote stays in treasury until configured.`;
     }
 
     const quoteReceivedRaw =

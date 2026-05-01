@@ -59,10 +59,41 @@ const CPMM_PROGRAM_IDS = new Set([
   DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM.toBase58(),
 ]);
 
+/**
+ * Raydium `fetchPoolById` is typed as an array but some responses are wrapped `{ data: [...] }`.
+ * Missing normalization caused runtime errors (`list.find` on non-arrays).
+ */
+export function coerceRaydiumPoolByIdList(raw: unknown): ApiV3PoolInfoItem[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw as ApiV3PoolInfoItem[];
+  if (typeof raw === 'object' && 'data' in (raw as object)) {
+    const inner = (raw as { data: unknown }).data;
+    return Array.isArray(inner) ? (inner as ApiV3PoolInfoItem[]) : [];
+  }
+  return [];
+}
+
+function safeMintDecimals(m: { decimals?: number } | undefined, fallback = 9): number {
+  const d = m?.decimals;
+  if (!Number.isFinite(d)) return fallback;
+  const t = Math.trunc(d as number);
+  if (t < 0 || t > 18) return fallback;
+  return t;
+}
+
 export function isCpmmPoolItem(
   pool: ApiV3PoolInfoItem,
 ): pool is ApiV3PoolInfoStandardItemCpmm {
-  return CPMM_PROGRAM_IDS.has(pool.programId);
+  if (pool.programId && CPMM_PROGRAM_IDS.has(pool.programId)) return true;
+  const ext = pool as ApiV3PoolInfoItem & { pooltype?: unknown };
+  if (
+    pool.type === 'Standard' &&
+    Array.isArray(ext.pooltype) &&
+    ext.pooltype.some((x) => String(x).toLowerCase() === 'cpmm')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function wrapSignAllTransactions(wallet: WalletContextState) {
@@ -249,7 +280,9 @@ export async function addCpmmLiquidityWithKeypair(
   } catch {
     throw new Error('Invalid pool address');
   }
-  const list = await raydium.api.fetchPoolById({ ids: trimmed });
+  const list = coerceRaydiumPoolByIdList(
+    await raydium.api.fetchPoolById({ ids: trimmed }),
+  );
   const poolInfo = list.find(isCpmmPoolItem);
   if (!poolInfo) {
     throw new Error(
@@ -288,7 +321,9 @@ export async function fetchCpmmPoolById(
   } catch {
     throw new Error('Invalid pool address');
   }
-  const list = await raydium.api.fetchPoolById({ ids: trimmed });
+  const list = coerceRaydiumPoolByIdList(
+    await raydium.api.fetchPoolById({ ids: trimmed }),
+  );
   const pool = list.find(isCpmmPoolItem);
   if (!pool) {
     throw new Error(
@@ -322,14 +357,16 @@ export async function addCpmmLiquidity(
   } catch {
     throw new Error('Invalid pool address');
   }
-  const list = await raydium.api.fetchPoolById({ ids: trimmed });
+  const list = coerceRaydiumPoolByIdList(
+    await raydium.api.fetchPoolById({ ids: trimmed }),
+  );
   const poolInfo = list.find(isCpmmPoolItem);
   if (!poolInfo) {
     throw new Error(
       'Pool not found or not a Raydium CPMM pool on this cluster — check the address and network.',
     );
   }
-  const dec = poolInfo[params.baseIn ? 'mintA' : 'mintB'].decimals;
+  const dec = safeMintDecimals(poolInfo[params.baseIn ? 'mintA' : 'mintB']);
   const raw = decimalStringToRawAmount(params.amountHuman.trim(), dec);
   const inputAmount = new BN(raw.toString());
   if (inputAmount.lte(new BN(0))) {
@@ -372,14 +409,16 @@ export async function removeCpmmLiquidity(
   } catch {
     throw new Error('Invalid pool address');
   }
-  const list = await raydium.api.fetchPoolById({ ids: trimmed });
+  const list = coerceRaydiumPoolByIdList(
+    await raydium.api.fetchPoolById({ ids: trimmed }),
+  );
   const poolInfo = list.find(isCpmmPoolItem);
   if (!poolInfo) {
     throw new Error(
       'Pool not found or not a Raydium CPMM pool on this cluster — check the address and network.',
     );
   }
-  const dec = poolInfo.lpMint.decimals;
+  const dec = safeMintDecimals(poolInfo.lpMint);
   const raw = decimalStringToRawAmount(params.lpAmountHuman.trim(), dec);
   const lpAmount = new BN(raw.toString());
   if (lpAmount.lte(new BN(0))) {

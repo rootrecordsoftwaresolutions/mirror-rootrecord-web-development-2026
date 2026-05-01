@@ -9,10 +9,46 @@ export const ECOSYSTEM_LISTING_SYMBOL = 'RRTT';
 /** Metaplex listing name for the ecosystem mint — keep in sync with on-chain metadata. */
 export const ECOSYSTEM_LISTING_NAME = 'Root Record Treasury Token';
 
-/** Raydium CPMM pool state (Solscan account). */
-export const ECOSYSTEM_SOLSCAN_CPMM_POOL =
+/** Raydium CPMM pool state — SOL / WSOL quote leg (Solscan account). */
+export const ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL =
+  process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_SOL?.trim() ||
   process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
   'CJPypGffPA7xf9rPy7HhuLQSx7FZUpYgrSXYMuiTHuJr';
+
+/** Raydium CPMM pool state — USDC quote leg; empty until configured. */
+export const ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC =
+  process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_USDC?.trim() || '';
+
+/** @deprecated Alias for `ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL` (WSOL pair). */
+export const ECOSYSTEM_SOLSCAN_CPMM_POOL = ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL;
+
+function ecosystemOtcCpmmPoolIdLegacy(): string {
+  return (
+    process.env.ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
+    process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
+    ''
+  );
+}
+
+/**
+ * Raydium CPMM pool id for treasury-transfer auto-LP: separate pools for WSOL vs USDC quote.
+ * Falls back to legacy `ECOSYSTEM_OTC_CPMM_POOL_ID` when the split env for that rail is unset.
+ */
+export function resolveOtcCpmmPoolId(payWith: 'SOL' | 'USDC'): string {
+  const legacy = ecosystemOtcCpmmPoolIdLegacy();
+  if (payWith === 'SOL') {
+    const sol =
+      process.env.ECOSYSTEM_OTC_CPMM_POOL_ID_SOL?.trim() ||
+      process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_SOL?.trim() ||
+      '';
+    return sol || legacy;
+  }
+  const usdc =
+    process.env.ECOSYSTEM_OTC_CPMM_POOL_ID_USDC?.trim() ||
+    process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_USDC?.trim() ||
+    '';
+  return usdc || legacy;
+}
 
 /** Treasury wallet shown on ecosystem / tokenomics (Solscan). */
 export const ECOSYSTEM_SOLSCAN_TREASURY =
@@ -72,43 +108,4 @@ export function ecosystemOtcUsdcMint(): string {
   if (trimmed) return trimmed;
   const net = process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim() || 'mainnet-beta';
   return net === 'devnet' ? DEVNET_USDC_DEFAULT : USDC_MINT;
-}
-
-/** End of pause window (ms): after this instant, USDC treasury transfer payments auto-deposit into CPMM. Default end of April 30, 2026 UTC. */
-function ecosystemOtcUsdcLpResumeAtMs(): number {
-  const iso =
-    process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_USDC_LP_RESUME_ISO?.trim() ||
-    process.env.ECOSYSTEM_OTC_USDC_LP_RESUME_ISO?.trim();
-  if (iso) {
-    const t = Date.parse(iso);
-    if (!Number.isNaN(t)) return t;
-  }
-  return Date.UTC(2026, 3, 30, 23, 59, 59, 999);
-}
-
-/** When false, USDC received from treasury transfers stays in treasury for initial seed; SOL auto-LP unchanged. */
-export function ecosystemOtcUsdcAutoLpEnabled(): boolean {
-  return Date.now() > ecosystemOtcUsdcLpResumeAtMs();
-}
-
-/** Human-readable resume target for UI copy. */
-export function ecosystemOtcUsdcLpResumeLabel(): string {
-  const custom = process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_USDC_LP_RESUME_LABEL?.trim();
-  if (custom) return custom;
-  const iso =
-    process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_USDC_LP_RESUME_ISO?.trim() ||
-    process.env.ECOSYSTEM_OTC_USDC_LP_RESUME_ISO?.trim();
-  if (iso) {
-    const t = Date.parse(iso);
-    if (!Number.isNaN(t)) {
-      return new Date(t).toLocaleDateString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-      });
-    }
-  }
-  return 'April 30, 2026 (UTC)';
 }
