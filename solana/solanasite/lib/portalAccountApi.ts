@@ -37,7 +37,12 @@ export function friendlyPortalApiError(j: Record<string, unknown>): string {
       : typeof err === 'string'
         ? err.trim()
         : '';
-  if (msg && msg.length < 400 && !looksTechnicalMessage(msg)) return msg;
+  if (msg && msg.length < 400 && !looksTechnicalMessage(msg)) {
+    if (msg === 'not_found') {
+      return 'That account API path is not available. Deploy the latest rootrecord-primary Worker or check NEXT_PUBLIC_ROOTRECORD_API_BASE.';
+    }
+    return msg;
+  }
   return '';
 }
 
@@ -171,6 +176,123 @@ export async function portalCreateCustodialWallet(
     };
   }
   return { ok: true };
+}
+
+/** Matches `rr_earn_custodial_ledger` rows from GET `/v1/me/rewards-ledger`. */
+export type RewardsLedgerAppSnapshot = {
+  per_app_totals_at_transfer: { app_id: string; total_units: number }[];
+  attributed_to_this_transfer: { app_id: string; units: number }[];
+};
+
+export type RewardsLedgerTransaction = {
+  id: string;
+  kind: string;
+  direction: string;
+  units: number;
+  tx_signature: string | null;
+  recipient_pubkey: string | null;
+  app_snapshot: RewardsLedgerAppSnapshot;
+  earn_balance_snapshot: number | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type RewardsLedgerPage = {
+  ok: boolean;
+  total: number;
+  limit: number;
+  offset: number;
+  solana_cluster: string;
+  explorer_tx_base: string;
+  transactions: RewardsLedgerTransaction[];
+};
+
+export async function fetchRewardsLedger(
+  token: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<{ ok: true; data: RewardsLedgerPage } | { ok: false; status: number; detail: string }> {
+  const base = getRootRecordApiBase();
+  if (!base) return { ok: false, status: 503, detail: 'Account API is not configured.' };
+  const limit = Math.min(200, Math.max(1, Math.floor(opts?.limit ?? 50)));
+  const offset = Math.max(0, Math.floor(opts?.offset ?? 0));
+  const url = `${base}/v1/me/rewards-ledger?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const { j } = await parsePortalJson(res);
+  if (res.status === 401) return { ok: false, status: 401, detail: 'Session expired.' };
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      detail: friendlyPortalApiError(j) || 'Could not load rewards history.',
+    };
+  }
+  const total = Math.max(0, Math.floor(Number(j.total) || 0));
+  const lim = Math.max(1, Math.floor(Number(j.limit) || limit));
+  const off = Math.max(0, Math.floor(Number(j.offset) || offset));
+  const explorer_tx_base =
+    typeof j.explorer_tx_base === 'string' && j.explorer_tx_base.trim()
+      ? j.explorer_tx_base.trim()
+      : 'https://solscan.io/tx/';
+  const solana_cluster = typeof j.solana_cluster === 'string' ? j.solana_cluster : 'mainnet-beta';
+  const rawTx = j.transactions;
+  const transactions: RewardsLedgerTransaction[] = Array.isArray(rawTx)
+    ? rawTx.map((row) => {
+        const o = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+        const snap = o.app_snapshot;
+        let app_snapshot: RewardsLedgerAppSnapshot = {
+          per_app_totals_at_transfer: [],
+          attributed_to_this_transfer: [],
+        };
+        if (snap && typeof snap === 'object' && snap !== null) {
+          const s = snap as Record<string, unknown>;
+          const per = Array.isArray(s.per_app_totals_at_transfer) ? s.per_app_totals_at_transfer : [];
+          const att = Array.isArray(s.attributed_to_this_transfer) ? s.attributed_to_this_transfer : [];
+          app_snapshot = {
+            per_app_totals_at_transfer: per
+              .map((x) => {
+                const r = x && typeof x === 'object' ? (x as Record<string, unknown>) : {};
+                return {
+                  app_id: String(r.app_id || '').trim(),
+                  total_units: Math.max(0, Math.floor(Number(r.total_units) || 0)),
+                };
+              })
+              .filter((x) => x.app_id),
+            attributed_to_this_transfer: att
+              .map((x) => {
+                const r = x && typeof x === 'object' ? (x as Record<string, unknown>) : {};
+                return {
+                  app_id: String(r.app_id || '').trim(),
+                  units: Math.max(0, Math.floor(Number(r.units) || 0)),
+                };
+              })
+              .filter((x) => x.app_id),
+          };
+        }
+        return {
+          id: String(o.id || ''),
+          kind: String(o.kind || ''),
+          direction: String(o.direction || ''),
+          units: Math.max(0, Math.floor(Number(o.units) || 0)),
+          tx_signature: o.tx_signature == null ? null : String(o.tx_signature),
+          recipient_pubkey: o.recipient_pubkey == null ? null : String(o.recipient_pubkey),
+          app_snapshot,
+          earn_balance_snapshot:
+            o.earn_balance_snapshot == null ? null : Math.floor(Number(o.earn_balance_snapshot) || 0),
+          notes: o.notes == null ? null : String(o.notes),
+          created_at: String(o.created_at || ''),
+        };
+      })
+    : [];
+  const data: RewardsLedgerPage = {
+    ok: Boolean(j.ok !== false),
+    total,
+    limit: lim,
+    offset: off,
+    solana_cluster,
+    explorer_tx_base,
+    transactions,
+  };
+  return { ok: true, data };
 }
 
 export async function portalSaveWithdrawDest(

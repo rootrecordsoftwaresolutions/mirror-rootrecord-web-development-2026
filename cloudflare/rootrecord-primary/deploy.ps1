@@ -1,4 +1,5 @@
-# Load credentials.env (walk up from this script until RootRecord/credentials.env is found), then D1 migrate + deploy.
+# Load credentials.env (walk up from this script until repo-root credentials.env is found), then optional Web/main/.env
+# (main dev folder), then D1 migrate + deploy.
 $ErrorActionPreference = "Stop"
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
     $PSNativeCommandUseErrorActionPreference = $false
@@ -27,6 +28,19 @@ Get-Content $rootCred | ForEach-Object {
         $k = $line.Substring(0, $p).Trim()
         $v = $line.Substring($p + 1).Trim()
         Set-Item -Path "Env:$k" -Value $v
+    }
+}
+$mainDevEnv = Join-Path $repoRoot "Web\main\.env"
+if (Test-Path -LiteralPath $mainDevEnv) {
+    Get-Content $mainDevEnv | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line.StartsWith("#")) { return }
+        $p = $line.IndexOf("=")
+        if ($p -gt 0) {
+            $k = $line.Substring(0, $p).Trim()
+            $v = $line.Substring($p + 1).Trim()
+            Set-Item -Path "Env:$k" -Value $v
+        }
     }
 }
 # Wrangler global key auth uses CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL (see Cloudflare system env docs).
@@ -91,6 +105,12 @@ $accuApiKey = [string]$env:ACCUWEATHER_API_KEY
 if ($accuApiKey -and $accuApiKey.Length -ge 16) {
   $accuApiKey | npx wrangler secret put ACCUWEATHER_API_KEY
   Write-Host "Uploaded ACCUWEATHER_API_KEY to Worker (from credentials.env)."
+}
+
+$discordFeedback = [string]$env:DISCORD_FEEDBACK_WEBHOOK_URL
+if ($discordFeedback -match '^https://discord(app)?\.com/api/webhooks/' -and $discordFeedback.Length -gt 60) {
+  $discordFeedback | npx wrangler secret put DISCORD_FEEDBACK_WEBHOOK_URL
+  Write-Host "Uploaded DISCORD_FEEDBACK_WEBHOOK_URL (from credentials.env)."
 }
 
 npx wrangler d1 migrations apply root-record --remote

@@ -33,9 +33,31 @@
     else openAccountPanel();
   }
 
+  function ensureFooterTesterRewardsLink() {
+    const footer = document.querySelector(".site-footer");
+    if (!footer) return;
+
+    // Avoid duplicates if any page already includes it.
+    const existing = footer.querySelector('a[href="/beta-tester-rewards.html"], a[href="https://rootrecord.info/beta-tester-rewards"], a[href="https://rootrecord.info/beta-tester-rewards.html"]');
+    if (existing) return;
+
+    const cols = Array.from(footer.querySelectorAll(".footer-col"));
+    const companyCol = cols.find((c) => (c.querySelector("h4")?.textContent || "").trim() === "Company");
+    const ul = companyCol?.querySelector("ul");
+    if (!ul) return;
+
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = "/beta-tester-rewards.html";
+    a.textContent = "Earn Rewards";
+    li.appendChild(a);
+    ul.appendChild(li);
+  }
+
   window.addEventListener("DOMContentLoaded", () => {
     syncNavSignedIn();
     syncLifetimeNav();
+    ensureFooterTesterRewardsLink();
 
     window.addEventListener("storage", (e) => {
       if (e.key === TOKEN_KEY) {

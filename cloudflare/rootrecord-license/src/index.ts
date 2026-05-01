@@ -239,10 +239,12 @@ async function handleMe(env: Env, request: Request): Promise<Response> {
     apps = {
       rootrecord_business_manager_windows: {
         associated: null,
-        note: "Association status is temporarily unavailable.",
+        note: "Association data temporarily unavailable.",
+        last_connected_at: null,
       },
-      rootrecord_weather_manager_windows: { associated: false },
-      rootrecord_weather_manager_android: { associated: false },
+      rootrecord_business_manager_android: { associated: false, last_connected_at: null },
+      rootrecord_weather_manager_windows: { associated: false, last_connected_at: null },
+      rootrecord_weather_manager_android: { associated: false, last_connected_at: null },
       signals: { mobile_push: false, saved_locations: false, weather_cache: false },
     };
   }

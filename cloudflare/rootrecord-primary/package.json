@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "d1:apply": "wrangler d1 migrations apply root-record --remote",
+    "d1:apply": "powershell -NoProfile -ExecutionPolicy Bypass -File ./d1-apply-remote.ps1",
     "d1:apply:local": "wrangler d1 migrations apply root-record --local",
     "d1:bm:clear-user": "node scripts/clear-bm-user-business.mjs",
     "d1:bm:scan-all": "node scripts/clear-bm-all-users.mjs",

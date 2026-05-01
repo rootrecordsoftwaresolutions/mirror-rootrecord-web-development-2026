@@ -20,6 +20,7 @@ import nacl from "tweetnacl";
 import { json } from "./cors";
 import { sessionFromBearer, type AuthEnv } from "./primary-auth";
 import { notifySolanaToolsDiscord } from "./discord-solana-notify";
+import { insertTreasuryToCustodialLedger } from "./earn-rewards-ledger";
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -53,6 +54,31 @@ async function aesGcmDecrypt(key: CryptoKey, iv: Uint8Array, ct: Uint8Array): Pr
   return new Uint8Array(ptBuf);
 }
 
+/** D1 may return BLOB as Uint8Array, ArrayBuffer, number[], or (if stored as text) base64. */
+function d1BlobToUint8(v: unknown): Uint8Array | null {
+  if (v == null) return null;
+  if (v instanceof Uint8Array) return v.byteLength ? v : null;
+  if (v instanceof ArrayBuffer) {
+    const u = new Uint8Array(v);
+    return u.byteLength ? u : null;
+  }
+  if (Array.isArray(v)) {
+    const u = new Uint8Array(v as number[]);
+    return u.byteLength ? u : null;
+  }
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return null;
+    try {
+      const u = base64ToBytes(s);
+      return u.byteLength ? u : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export type InternalWalletEnv = AuthEnv & {
   DB: D1Database;
   INTERNAL_WALLET_ENC_KEY_B64?: string;
@@ -62,29 +88,42 @@ export type InternalWalletEnv = AuthEnv & {
 async function readWalletRow(
   db: D1Database,
   accountId: string,
-): Promise<{ pubkey: string; created_at: string; enc_b64: string; iv_b64: string } | null> {
+): Promise<{ pubkey: string; created_at: string; enc: Uint8Array; iv: Uint8Array } | null> {
   const row = await db
     .prepare(
-      "SELECT pubkey, created_at, privkey_pkcs8_enc AS enc_b64, privkey_iv AS iv_b64 FROM internal_solana_wallets WHERE account_id = ?",
+      "SELECT pubkey, created_at, privkey_pkcs8_enc AS enc_raw, privkey_iv AS iv_raw FROM internal_solana_wallets WHERE account_id = ?",
     )
     .bind(accountId)
-    .first<{ pubkey: string; created_at: string; enc_b64: string; iv_b64: string }>();
-  if (!row?.pubkey || !row.enc_b64 || !row.iv_b64) return null;
+    .first<{ pubkey: string; created_at: string; enc_raw: unknown; iv_raw: unknown }>();
+  if (!row?.pubkey) return null;
+  const enc = d1BlobToUint8(row.enc_raw);
+  const iv = d1BlobToUint8(row.iv_raw);
+  if (!enc || !iv) return null;
   return {
-    pubkey: row.pubkey,
-    created_at: row.created_at,
-    enc_b64: row.enc_b64,
-    iv_b64: row.iv_b64,
+    pubkey: String(row.pubkey).trim(),
+    created_at: String(row.created_at || ""),
+    enc,
+    iv,
   };
 }
 
-async function loadKeypairForAccount(env: InternalWalletEnv, accountId: string): Promise<Keypair | null> {
+async function custodialPubkeyOnly(db: D1Database, accountId: string): Promise<string | null> {
+  const row = await db
+    .prepare("SELECT pubkey FROM internal_solana_wallets WHERE account_id = ?")
+    .bind(accountId)
+    .first<{ pubkey: string }>();
+  const p = String(row?.pubkey || "").trim();
+  return p || null;
+}
+
+/** Decrypt custodial key for signing (treasury sweeps, custodial sign endpoints). */
+export async function loadKeypairForAccount(env: InternalWalletEnv, accountId: string): Promise<Keypair | null> {
   const row = await readWalletRow(env.DB, accountId);
   if (!row) return null;
   const aesKey = await importAesKeyFromEnv(env);
   if (!aesKey) return null;
   try {
-    const sk = await aesGcmDecrypt(aesKey, base64ToBytes(row.iv_b64), base64ToBytes(row.enc_b64));
+    const sk = await aesGcmDecrypt(aesKey, row.iv, row.enc);
     if (sk.length === 64) return Keypair.fromSecretKey(sk);
     if (sk.length === 32) return Keypair.fromSeed(sk);
   } catch {
@@ -106,7 +145,7 @@ export async function provisionCustodialWalletIfMissing(env: InternalWalletEnv, 
       .prepare(
         "INSERT INTO internal_solana_wallets (account_id, pubkey, privkey_pkcs8_enc, privkey_iv) VALUES (?, ?, ?, ?)",
       )
-      .bind(accountId, kp.publicKey.toBase58(), bytesToBase64(enc.ct), bytesToBase64(enc.iv))
+      .bind(accountId, kp.publicKey.toBase58(), enc.ct, enc.iv)
       .run();
     try {
       await env.DB
@@ -151,11 +190,12 @@ export async function handleCustodialSolWalletV1(
 
   if (method === "GET" && rest === "") {
     const row = await readWalletRow(env.DB, sess.accountId);
+    const pkOnly = row?.pubkey ?? (await custodialPubkeyOnly(env.DB, sess.accountId));
     return json(
       {
         ok: true,
-        has_wallet: Boolean(row?.pubkey),
-        public_key: row?.pubkey ?? null,
+        has_wallet: Boolean(pkOnly),
+        public_key: pkOnly ?? null,
         custodial_enabled: custodialEnabled(env),
       },
       200,
@@ -177,6 +217,19 @@ export async function handleCustodialSolWalletV1(
         200,
       );
     }
+    const pubkeyOrphan = await custodialPubkeyOnly(env.DB, sess.accountId);
+    if (pubkeyOrphan) {
+      console.error("custodial wallet: row without readable ciphertext", sess.accountId);
+      return json(
+        {
+          ok: false,
+          detail:
+            "A custodial wallet row exists but keys could not be read (encryption key mismatch or damaged data). Contact support; do not retry until fixed.",
+          custodial_enabled: custodialEnabled(env),
+        },
+        503,
+      );
+    }
     const aesKey = await importAesKeyFromEnv(env);
     if (!aesKey) {
       return json(
@@ -191,7 +244,7 @@ export async function handleCustodialSolWalletV1(
         .prepare(
           "INSERT INTO internal_solana_wallets (account_id, pubkey, privkey_pkcs8_enc, privkey_iv) VALUES (?, ?, ?, ?)",
         )
-        .bind(sess.accountId, kp.publicKey.toBase58(), bytesToBase64(enc.ct), bytesToBase64(enc.iv))
+        .bind(sess.accountId, kp.publicKey.toBase58(), enc.ct, enc.iv)
         .run();
       try {
         await env.DB
@@ -203,8 +256,28 @@ export async function handleCustodialSolWalletV1(
       }
     } catch (e) {
       const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
-      console.error("custodial wallet create", msg);
-      return json({ ok: false, detail: "Could not create custodial wallet." }, 500);
+      console.error("custodial wallet create", sess.accountId, msg);
+      const again = await custodialPubkeyOnly(env.DB, sess.accountId);
+      if (again) {
+        const recovered = await readWalletRow(env.DB, sess.accountId);
+        if (recovered) {
+          return json(
+            {
+              ok: true,
+              created: false,
+              has_wallet: true,
+              public_key: recovered.pubkey,
+              created_at: recovered.created_at,
+              custodial_enabled: custodialEnabled(env),
+            },
+            200,
+          );
+        }
+      }
+      const detail = /no such table/i.test(msg)
+        ? "Database is missing custodial tables. Apply D1 migrations (internal_solana_wallets)."
+        : "Could not create custodial wallet.";
+      return json({ ok: false, detail }, 500);
     }
     const row = await readWalletRow(env.DB, sess.accountId);
     const createdAt = row?.created_at || new Date().toISOString();
@@ -458,6 +531,18 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
           )
           .bind(newSent, now, sig, r.account_id)
           .run();
+        try {
+          await insertTreasuryToCustodialLedger(env.DB, {
+            accountId: r.account_id,
+            emailLower: String(r.email || "").toLowerCase(),
+            units: pending,
+            txSignature: sig,
+            earnBalanceSnapshot: earnBal,
+          });
+        } catch (e) {
+          const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+          console.error("ledger insert treasury", r.account_id, m);
+        }
         console.log("rrtt transfer ok", r.account_id, pending, sig);
       }
 

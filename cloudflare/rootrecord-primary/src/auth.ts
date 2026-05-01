@@ -8,7 +8,12 @@ export async function resolveUserId(request: Request, env: AuthEnv): Promise<str
   if (auth.toLowerCase().startsWith("bearer ")) {
     const token = auth.slice(7).trim();
     const sess = await sessionFromBearer(env, token);
-    if (sess) return `user:${sess.email.toLowerCase()}`;
+    if (sess) {
+      const email = String(sess.email || "")
+        .trim()
+        .toLowerCase();
+      if (email) return `user:${email}`;
+    }
     return json({ detail: "Invalid or expired session." }, 401);
   }
   if (guest) {

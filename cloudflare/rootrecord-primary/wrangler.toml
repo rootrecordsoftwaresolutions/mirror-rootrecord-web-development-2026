@@ -1,5 +1,5 @@
 # Single Worker + single D1 (`root-record` only). Auth lives in this Worker (JWT + license_accounts).
-# Secrets: JWT_SECRET (set by deploy.ps1 from credentials.env and/or gitignored .deploy-* files).
+# Secrets: JWT_SECRET (set by deploy.ps1 from credentials.env, optional Web/main/.env, and/or gitignored .deploy-* files).
 #
 # Cloudflare account: set CLOUDFLARE_ACCOUNT_ID in repo-root credentials.env (loaded by deploy.ps1), or run `wrangler login`.
 # New D1 in a new account: `npx wrangler d1 create root-record` → paste database_id here and in credentials.env (D1_DATABASE_ID) and rootrecord-license/wrangler.toml.
@@ -8,8 +8,8 @@ main = "src/index.ts"
 compatibility_date = "2024-11-01"
 
 [triggers]
-# NOAA push cadence + daily RRTT treasury → custodial sweep (07:00 UTC).
-crons = ["*/5 * * * *", "0 7 * * *"]
+# NOAA push cadence + daily RRTT treasury → custodial sweep (07:00 UTC) + inactive-account purge (08:45 UTC).
+crons = ["*/5 * * * *", "0 7 * * *", "45 8 * * *"]
 
 [[d1_databases]]
 binding = "DB"

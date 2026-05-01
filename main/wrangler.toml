@@ -1,5 +1,6 @@
 # Cloudflare Pages — static site + small Functions (API base for account portal).
-# Deploy: npm install && npx wrangler pages deploy . --project-name=rootrecord-website
+# Deploy: npm install && npm run pages:deploy
+# (pages-deploy.ps1 walks up for credentials.env / credentials.env.txt and supports API token or email + global key.)
 #
 # Custom domain (e.g. rootrecord.info):
 # 1. Cloudflare dashboard → Workers & Pages → rootrecord-website → Custom domains → Set up a domain.

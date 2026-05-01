@@ -16,6 +16,8 @@ import { handlePrefsRoutes } from "./prefs";
 import { handleEarnRoutes } from "./earn";
 import { handleBusinessRoutes, handleBusinessAuthEntitlement, bmWipeOwnedRows } from "./business-mobile";
 import { handleFeedbackRoute } from "./feedback-route";
+import { performAccountDeletion } from "./account-deletion";
+import { handleRewardsLedgerV1 } from "./earn-rewards-ledger";
 import {
   handleCustodialSolWalletV1,
   handleCustodialWithdrawDestV1,
@@ -143,18 +145,31 @@ export interface Env {
   /** Treasury keypair secret key base58 (same encoding as Phantom export). */
   RRTT_TREASURY_SECRET_KEY_B58?: string;
 
+  /**
+   * Days without activity before scheduled purge (cron `45 8 * * * UTC`). Activity = latest session
+   * touch, account `updated_at`, or `created_at`. Default 365. Min 30.
+   */
+  ABANDONED_ACCOUNT_INACTIVITY_DAYS?: string;
+
 }
 
+/** Collapse repeated slashes (`//v1/...`) and strip trailing slash so route tables match. */
+function normalizePathname(pathname: string): string {
+  return pathname.replace(/\/+/g, "/").replace(/\/+$/, "") || "/";
+}
 
-
+/**
+ * Path after `/api` for Worker routes. Normalizes slashes and strips repeated `/api` prefixes
+ * (e.g. `/api/api/v1/me/...` → `/v1/me/...`) so custodial + account paths always resolve.
+ */
 function apiSubpath(pathname: string): string {
-
-  if (!pathname.startsWith("/api")) return pathname;
-
-  const rest = pathname.slice(4);
-
-  return rest === "" ? "/" : rest;
-
+  let p = normalizePathname(pathname);
+  if (!p.startsWith("/api")) return p;
+  while (p.startsWith("/api/") || p === "/api") {
+    if (p === "/api") return "/";
+    p = normalizePathname(p.slice(4));
+  }
+  return p;
 }
 
 
@@ -193,7 +208,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const url = new URL(request.url);
 
-  const pathname = url.pathname.replace(/\/+$/, "") || "/";
+  const pathname = normalizePathname(url.pathname);
 
   const method = request.method;
 
@@ -411,6 +426,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     }
 
+    if (pathname === "/v1/me/rewards-ledger") {
+
+      return handleRewardsLedgerV1(request, env, method);
+
+    }
+
     if (method === "DELETE" && pathname === "/v1/me") {
 
       const auth = request.headers.get("Authorization") || "";
@@ -432,46 +453,14 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       }
 
       const email = sess.email.toLowerCase();
-      const userId = `user:${email}`;
       const accountId = sess.accountId;
 
-      try {
-
-        await env.DB.batch([
-
-          env.DB.prepare("DELETE FROM license_sessions WHERE account_id = ?").bind(accountId),
-
-          env.DB.prepare("DELETE FROM license_email_change WHERE account_id = ?").bind(accountId),
-
-          env.DB.prepare("DELETE FROM solana_linked_wallets WHERE account_id = ?").bind(accountId),
-
-          env.DB.prepare("DELETE FROM rr_earn_custodial_state WHERE account_id = ?").bind(accountId),
-
-          env.DB.prepare("DELETE FROM internal_solana_wallets WHERE account_id = ?").bind(accountId),
-
-          env.DB.prepare("DELETE FROM rrwm_locations WHERE user_id = ?").bind(userId),
-
-          env.DB.prepare("DELETE FROM rrwm_push_tokens WHERE user_id = ?").bind(userId),
-
-          env.DB.prepare("DELETE FROM weather_data WHERE user_id = ?").bind(userId),
-
-          env.DB.prepare("DELETE FROM user_accounts WHERE email = ?").bind(email),
-
-          env.DB.prepare("DELETE FROM license_accounts WHERE id = ? AND email = ?").bind(accountId, email),
-
-        ]);
-
-      } catch (e) {
-
-        const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
-
-        console.error("deleteAccount error", msg);
-
-        return json({ detail: "Could not delete account. Please try again." }, 500);
-
+      const del = await performAccountDeletion(env, accountId, email);
+      if (!del.ok) {
+        return json({ detail: del.detail, ok: false }, del.status);
       }
 
-      return json({ ok: true }, 200);
+      return json({ ok: true, custodial_sweep: del.custodial_sweep }, 200);
 
     }
 
@@ -567,6 +556,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   if (sub === "/v1/me/custodial-sol-wallet" || sub.startsWith("/v1/me/custodial-sol-wallet/")) {
     return handleCustodialSolWalletV1(request, env, method, sub);
+  }
+
+  if (sub === "/v1/me/rewards-ledger") {
+    return handleRewardsLedgerV1(request, env, method);
   }
 
   if (method === "GET" && (pathname === "/api" || pathname === "/api/")) {

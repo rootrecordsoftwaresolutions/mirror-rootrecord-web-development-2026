@@ -294,79 +294,108 @@
       .join("");
   }
 
+  function formatMyAppsLastConnected(iso) {
+    if (!iso || typeof iso !== "string") return null;
+    const raw = iso.trim();
+    if (!raw) return null;
+    const ms = Date.parse(raw);
+    const label = Number.isFinite(ms)
+      ? new Date(ms).toLocaleString(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })
+      : raw;
+    return { iso: raw, label };
+  }
+
   function renderMyApps(data) {
     const box = el("my-apps-list");
     if (!box) return;
     const apps = data.apps || {};
-    const bmw = apps.rootrecord_business_manager_windows || {};
+    const bma = apps.rootrecord_business_manager_android || {};
     const wwx = apps.rootrecord_weather_manager_windows || {};
     const wma = apps.rootrecord_weather_manager_android || {};
     const sig = apps.signals || {};
-    const rows = [
-      {
+    const rows = [];
+    if (bma.associated) {
+      rows.push({
         title: "RootRecord Business Manager",
-        platform: "Windows",
+        platform: "Android",
         href: "/rootrecord-business-manager.html",
-        statusLabel: bmw.associated === null ? "Not detected online" : bmw.associated ? "Linked" : "Not linked",
-        statusKind: bmw.associated === null ? "muted" : bmw.associated ? "ok" : "no",
         note:
-          typeof bmw.note === "string" && bmw.note.trim()
-            ? bmw.note.trim()
-            : "We do not receive install reports from this app. Your subscription still applies when you sign in there with this account.",
-      },
-      {
+          "Cloud business workspace on api.rootrecord.info is tied to this account.",
+        last_connected_at:
+          typeof bma.last_connected_at === "string" ? bma.last_connected_at : null,
+      });
+    }
+    if (wwx.associated) {
+      rows.push({
         title: "Root Record Weather Manager",
         platform: "Windows",
         href: "/rootrecord-weather-manager.html",
-        statusLabel: wwx.associated ? "Linked" : "Not linked",
-        statusKind: wwx.associated ? "ok" : "no",
-        note: wwx.associated
-          ? "Saved locations or synced weather history found for this account."
-          : "No saved locations or synced weather history found for this account yet.",
-      },
-      {
+        note:
+          "Saved locations or synced weather history found for this account.",
+        last_connected_at:
+          typeof wwx.last_connected_at === "string" ? wwx.last_connected_at : null,
+      });
+    }
+    if (wma.associated) {
+      rows.push({
         title: "Root Record Weather Manager",
         platform: "Android",
         href: "/rootrecord-weather-manager.html",
-        statusLabel: wma.associated ? "Linked" : "Not linked",
-        statusKind: wma.associated ? "ok" : "no",
-        note: wma.associated
-          ? "A mobile notification registration exists for this account."
-          : "No mobile notification registration found for this account yet.",
-      },
-    ];
+        note:
+          "A mobile notification registration exists for this account.",
+        last_connected_at:
+          typeof wma.last_connected_at === "string" ? wma.last_connected_at : null,
+      });
+    }
     const detailParts = [];
+    if (bma.associated) detailParts.push("Business Manager cloud workspace");
     if (sig.mobile_push) detailParts.push("mobile notifications");
     if (sig.saved_locations) detailParts.push("saved locations");
     if (sig.weather_cache) detailParts.push("weather cache rows");
     const detail =
       detailParts.length > 0
         ? "Server signals: " + detailParts.join(", ") + "."
-        : "No Weather Manager server signals yet for this account.";
+        : "";
+    if (rows.length === 0) {
+      box.innerHTML =
+        '<p class="note" style="margin:0">No linked apps yet. When you sign in inside a RootRecord app and we see saved data, notifications, or synced weather for this account, it will appear here.</p>' +
+        '<p style="margin-top:1rem"><a class="btn btn-secondary" href="/products.html">Browse products</a></p>';
+      return;
+    }
     box.innerHTML =
       rows
-        .map(
-          (r) =>
+        .map((r) => {
+          const lc = formatMyAppsLastConnected(r.last_connected_at);
+          const lastHtml = lc
+            ? '<p class="note my-apps-last-connected"><span class="my-apps-last-connected-label">Last connected: </span><time datetime="' +
+              escapeHtml(lc.iso) +
+              '">' +
+              escapeHtml(lc.label) +
+              "</time></p>"
+            : "";
+          return (
             '<article class="my-apps-card" data-testid="my-app-card">' +
             '<div class="my-apps-card-head">' +
             '<h3 class="my-apps-card-title">' +
             escapeHtml(r.title) +
             '</h3><span class="my-apps-platform">' +
             escapeHtml(r.platform) +
-            '</span></div><p class="my-apps-status my-apps-status-' +
-            escapeHtml(r.statusKind) +
-            '"><strong>' +
-            escapeHtml(r.statusLabel) +
-            "</strong></p><p class=\"note my-apps-note\">" +
+            '</span></div><p class="note my-apps-note" style="margin-top:0.35rem">' +
             escapeHtml(r.note) +
-            '</p><p class="my-apps-card-actions"><a class="btn btn-secondary" href="' +
+            "</p>" +
+            lastHtml +
+            '<p class="my-apps-card-actions"><a class="btn btn-secondary" href="' +
             escapeHtml(r.href) +
             '">Product page</a></p></article>'
-        )
+          );
+        })
         .join("") +
-      '<p class="note" style="margin-top:1.25rem">' +
-      escapeHtml(detail) +
-      "</p>";
+      (detail
+        ? '<p class="note" style="margin-top:1.25rem">' + escapeHtml(detail) + "</p>"
+        : "");
   }
 
   async function refreshMyApps() {

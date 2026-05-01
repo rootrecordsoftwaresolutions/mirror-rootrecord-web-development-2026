@@ -1,5 +1,6 @@
 import type { Env } from "./router";
 import { handleRequest } from "./router";
+import { runInactiveAccountCleanupCron } from "./inactive-account-cron";
 import { runNoaaAlertCron } from "./noaa-alert-cron";
 import { runRrttCustodialPayoutCron } from "./solana-internal-wallet";
 
@@ -11,6 +12,10 @@ export default {
     const c = event.cron || "";
     if (c === "0 7 * * *") {
       await runRrttCustodialPayoutCron(env);
+      return;
+    }
+    if (c === "45 8 * * *") {
+      await runInactiveAccountCleanupCron(env);
       return;
     }
     await runNoaaAlertCron(env);

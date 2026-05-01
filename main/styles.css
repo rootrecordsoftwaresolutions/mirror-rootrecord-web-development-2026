@@ -1602,6 +1602,18 @@ section { position: relative; }
   margin-bottom: 0;
 }
 
+.my-apps-last-connected {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+
+.my-apps-last-connected-label {
+  color: var(--ink-soft);
+}
+
 .my-apps-card-actions {
   margin: 0.85rem 0 0;
 }
