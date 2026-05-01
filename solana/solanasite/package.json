@@ -25,6 +25,7 @@
     "@solana/wallet-standard-wallet-adapter-react": "^1.1.4",
     "@solana/web3.js": "^1.95.4",
     "@streamflow/stream": "^11.4.0",
+    "@vercel/analytics": "^2.0.1",
     "bn.js": "^5.2.3",
     "bs58": "^6.0.0",
     "class-variance-authority": "^0.7.0",

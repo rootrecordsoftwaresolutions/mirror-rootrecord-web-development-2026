@@ -30,6 +30,7 @@ import {
 } from '@/lib/ecosystemOtcConstants';
 import { getConnection } from '@/lib/solana';
 import { WalletMultiButton } from '@/components/wallet/WalletButton';
+import { ExternalLink } from 'lucide-react';
 
 const QUOTE_TTL_MS = 30_000;
 
@@ -917,6 +918,14 @@ export default function EcosystemPage() {
               only pays the network fee and does not credit a purchase.
             </p>
           ) : null}
+          <div className="text-xs text-muted-foreground leading-relaxed max-w-2xl space-y-1">
+            <p>
+              Transfers automatically deposit match of the same value into the USDC/SOL liquidity pool.
+            </p>
+            <p>
+              Paying with USDC matches with USDC/RRTT. Paying with SOL matches with SOL/RRTT.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-3">
             <Button type="button" variant="outline" size="sm" onClick={() => void refreshPrices()}>
               Refresh prices
@@ -936,6 +945,16 @@ export default function EcosystemPage() {
               onClick={() => void payAndClaim()}
             >
               {fulfillLoading ? 'Working…' : 'Sign treasury transfer (pay + receive tokens)'}
+            </Button>
+            <Button asChild size="sm" variant="outline" className="gap-1.5">
+              <a
+                href={`https://jup.ag/tokens/${ECOSYSTEM_OTC_TOKEN_MINT}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Sell {ECOSYSTEM_LISTING_SYMBOL}
+                <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden />
+              </a>
             </Button>
             {retryFinalizeBody ? (
               <Button
