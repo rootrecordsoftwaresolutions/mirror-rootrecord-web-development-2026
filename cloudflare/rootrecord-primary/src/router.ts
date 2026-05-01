@@ -13,7 +13,13 @@ import { handleLocations } from "./locations";
 import { handlePushRoutes } from "./push";
 import { handlePrefsRoutes } from "./prefs";
 import { handleEarnRoutes } from "./earn";
-import { handleBusinessRoutes, handleBusinessAuthEntitlement } from "./business-mobile";
+import { handleBusinessRoutes, handleBusinessAuthEntitlement, bmWipeOwnedRows } from "./business-mobile";
+import { handleFeedbackRoute } from "./feedback-route";
+import { handleSolanaInternalWalletRoutes } from "./solana-internal-wallet";
+import { handleSolanaSiteLogRoute } from "./solana-site-log";
+import { handleSolanaSiteEcosystemOtcRoutes } from "./solana-site-ecosystem-otc";
+import { maybeForwardSolanaToolsApi } from "./solana-tools-forward";
+import { handleSolanaAppActivityRoute } from "./solana-app-activity";
 
 import {
 
@@ -82,6 +88,32 @@ export interface Env {
   /** Recurring Price id for Checkout (`wrangler.toml` [vars] or dashboard). */
 
   STRIPE_PRICE_ID?: string;
+
+  /**
+   * Internal custodial wallet encryption key (AES-256-GCM).
+   * Base64-encoded 32-byte key. Must be set as a Worker secret/var.
+   * Never commit real values.
+   */
+  INTERNAL_WALLET_ENC_KEY_B64?: string;
+
+  /** Discord incoming webhook URL for Solana tooling events (`wrangler secret put DISCORD_WEBHOOK_SOLANA_TOOLS`). */
+
+  DISCORD_WEBHOOK_SOLANA_TOOLS?: string;
+
+  /** Discord webhook for POST /api/feedback (`wrangler secret put DISCORD_FEEDBACK_WEBHOOK_URL`). */
+
+  DISCORD_FEEDBACK_WEBHOOK_URL?: string;
+
+  /** Bearer secret for POST /api/solana-site/log from the Next solanasite (`wrangler secret put SOLANA_SITE_LOG_SECRET`). */
+
+  SOLANA_SITE_LOG_SECRET?: string;
+
+  /**
+   * When this Worker fronts the solanasite hostname, forward Next-only `/api/ecosystem/*` (and
+   * selected `/api/solana-site/*` paths) to the Vercel origin — no trailing slash.
+   * `wrangler secret put SOLANA_TOOLS_API_FORWARD_URL`
+   */
+  SOLANA_TOOLS_API_FORWARD_URL?: string;
 
 }
 
@@ -195,7 +227,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     }
 
-    // /v1/* — same auth as /api/auth/* (website + desktop); no second Worker.
+    // /v1/* — same auth as /api/auth/* (website + native clients); no second Worker.
 
     if (method === "POST" && pathname === "/v1/auth/login") {
 
@@ -469,7 +501,34 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     }
 
-    return json({ status: d1Ok ? "ok" : "degraded", db: d1Ok ? "ok" : "unavailable" }, 200);
+    let bmOwnedOk = false;
+
+    if (d1Ok) {
+
+      try {
+
+        const t = await env.DB
+          .prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'bm_owned_row' LIMIT 1")
+          .first<{ ok: number }>();
+
+        bmOwnedOk = t?.ok === 1;
+
+      } catch {
+
+        bmOwnedOk = false;
+
+      }
+
+    }
+
+    return json(
+      {
+        status: d1Ok ? "ok" : "degraded",
+        db: d1Ok ? "ok" : "unavailable",
+        bm_owned_row: bmOwnedOk ? "ok" : "missing",
+      },
+      200
+    );
 
   }
 
@@ -737,7 +796,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     return handleBusinessAuthEntitlement(request, env);
   }
 
-
+  if (method === "POST" && sub === "/auth/wipe-business-data") {
+    return bmWipeOwnedRows(request, env);
+  }
 
   const pushRes = await handlePushRoutes(request, env, sub, method);
 
@@ -750,6 +811,26 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const earnRes = await handleEarnRoutes(request, env, sub, method);
 
   if (earnRes) return earnRes;
+
+  const solSiteLogRes = await handleSolanaSiteLogRoute(request, env, sub, method);
+
+  if (solSiteLogRes) return solSiteLogRes;
+
+  const solOtcRes = await handleSolanaSiteEcosystemOtcRoutes(request, env, sub, method);
+
+  if (solOtcRes) return solOtcRes;
+
+  const solAppActivityRes = await handleSolanaAppActivityRoute(request, env, sub, method);
+
+  if (solAppActivityRes) return solAppActivityRes;
+
+  const solRes = await handleSolanaInternalWalletRoutes(request, env, sub, method);
+
+  if (solRes) return solRes;
+
+  const feedbackRes = await handleFeedbackRoute(request, env, sub, method);
+
+  if (feedbackRes) return feedbackRes;
 
   const businessRes = await handleBusinessRoutes(request, env, sub, method);
 
@@ -922,6 +1003,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     );
 
   }
+
+  const forwardRes = await maybeForwardSolanaToolsApi(request, env, pathname, method);
+
+  if (forwardRes) return forwardRes;
 
   return json({ detail: "Not Found" }, 404);
 

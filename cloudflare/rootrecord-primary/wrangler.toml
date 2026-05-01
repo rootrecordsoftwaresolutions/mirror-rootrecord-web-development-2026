@@ -34,6 +34,26 @@ STRIPE_PRICE_ID = "price_REPLACE_WITH_YOUR_STRIPE_PRICE_ID"
 STRIPE_PRICING_TABLE_ID = "prctbl_1TQJ0kIaRpbMiAovAUe3X3QJ"
 STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWxLXDgJR7kRNSBSM8sJ2Wat1zuC56iE4TCTyPfqmEfTT600cR21LwYA"
 
+# Internal custodial wallet encryption (AES-256-GCM).
+# Set as a secret/var (base64-encoded 32-byte key). Example:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+#   wrangler secret put INTERNAL_WALLET_ENC_KEY_B64
+# Optional Discord channel for Solana tooling events (internal wallet provision, etc.):
+#   wrangler secret put DISCORD_WEBHOOK_SOLANA_TOOLS
+# In-app feedback (Business Manager, Account Hub, Weather mobile → POST /api/feedback):
+#   wrangler secret put DISCORD_FEEDBACK_WEBHOOK_URL
+#   (paste full https://discord.com/api/webhooks/... URL — never commit it to git)
+# Next.js solanasite POST /api/solana-site/log → Worker (must match site env SOLANA_SITE_LOG_SECRET):
+#   wrangler secret put SOLANA_SITE_LOG_SECRET
+#
+# Treasury OTC D1 + history on this Worker (`ecosystem_otc_fulfillments`):
+#   wrangler d1 migrations apply root-record --remote
+#   (migrations 0012 + 0013 in ./migrations/)
+#
+# When the solanasite hostname proxies /api/* here first, forward Next-only routes to Vercel:
+#   wrangler secret put SOLANA_TOOLS_API_FORWARD_URL
+#   Value: https://<project>.vercel.app   (no trailing slash)
+
 # All-device FCM broadcast (POST /api/internal/push-broadcast):
 #   wrangler secret put RR_PUSH_ADMIN_SECRET
 #   wrangler secret put FCM_SERVICE_ACCOUNT_JSON

@@ -58,7 +58,7 @@ type OtcD1Row = {
 };
 
 const OTC_HISTORY_UNAVAILABLE =
-  'Treasury transfer history is not available yet. Apply D1 migration 0013 on the Worker, deploy rootrecord-primary, and ensure SOLANA_SITE_LOG_URL points at that Worker.';
+  'Treasury transfer history is not available yet. On rootrecord-primary: apply D1 migrations 0012 and 0013, deploy the Worker (includes GET /api/solana-site/ecosystem-otc-history), and set the solanasite server env SOLANA_SITE_LOG_URL to that Worker’s origin so Next can proxy reads.';
 
 function shortAddr(a: string, head = 4, tail = 4): string {
   const s = (a || '').trim();
