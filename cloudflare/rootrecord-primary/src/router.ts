@@ -5,6 +5,7 @@ import { cors, json } from "./cors";
 import { resolveUserId } from "./auth";
 
 import { authLogin, authMe, authSignup, sessionFromBearer } from "./primary-auth";
+import { buildSessionInsertMeta, handleAuthLogout, handleMeAccountRoutes } from "./me-account-routes";
 
 import { createStripeSubscriptionCheckout } from "./billing-stripe";
 
@@ -17,6 +18,7 @@ import { handleBusinessRoutes, handleBusinessAuthEntitlement, bmWipeOwnedRows } 
 import { handleFeedbackRoute } from "./feedback-route";
 import { handleSolanaInternalWalletRoutes } from "./solana-internal-wallet";
 import { handleSolanaSiteLogRoute } from "./solana-site-log";
+import { handleSolanaSiteTokenDiscordNotifyRoute } from "./solana-site-token-discord-notify";
 import { handleSolanaSiteEcosystemOtcRoutes } from "./solana-site-ecosystem-otc";
 import { maybeForwardSolanaToolsApi } from "./solana-tools-forward";
 import { handleSolanaAppActivityRoute } from "./solana-app-activity";
@@ -108,12 +110,23 @@ export interface Env {
 
   SOLANA_SITE_LOG_SECRET?: string;
 
+  /** Discord webhook for new mints (POST /api/solana-site/token-discord-notify); `wrangler secret put DISCORD_TOKEN_CREATE_WEBHOOK_URL`. */
+
+  DISCORD_TOKEN_CREATE_WEBHOOK_URL?: string;
+
   /**
    * When this Worker fronts the solanasite hostname, forward Next-only `/api/ecosystem/*` (and
    * selected `/api/solana-site/*` paths) to the Vercel origin — no trailing slash.
-   * `wrangler secret put SOLANA_TOOLS_API_FORWARD_URL`
+   * Native Worker routes (no forward): POST `/api/solana-site/log`, POST `/api/solana-site/token-discord-notify`,
+   * and `/api/solana-site/ecosystem-otc*`. `wrangler secret put SOLANA_TOOLS_API_FORWARD_URL`
    */
   SOLANA_TOOLS_API_FORWARD_URL?: string;
+
+  /** Optional Resend API for POST /api/me/email/request (`wrangler secret put RESEND_API_KEY`). */
+
+  RESEND_API_KEY?: string;
+
+  RESEND_FROM?: string;
 
 }
 
@@ -249,7 +262,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
       }
 
-      const res = await authLogin(env, { email: creds.email || "", password: creds.password || "" });
+      const meta = buildSessionInsertMeta(request, licenseDeviceId(creds, request));
+
+      const res = await authLogin(env, { email: creds.email || "", password: creds.password || "" }, meta);
 
       if (!res.ok) return res;
 
@@ -301,7 +316,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
       }
 
-      const res = await authSignup(env, { email: creds.email || "", password: creds.password || "" });
+      const meta = buildSessionInsertMeta(request, licenseDeviceId(creds, request));
+
+      const res = await authSignup(env, { email: creds.email || "", password: creds.password || "" }, meta);
 
       if (!res.ok) return res;
 
@@ -377,6 +394,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
         await env.DB.batch([
 
+          env.DB.prepare("DELETE FROM license_sessions WHERE account_id = ?").bind(accountId),
+
+          env.DB.prepare("DELETE FROM license_email_change WHERE account_id = ?").bind(accountId),
+
           env.DB.prepare("DELETE FROM rrwm_locations WHERE user_id = ?").bind(userId),
 
           env.DB.prepare("DELETE FROM rrwm_push_tokens WHERE user_id = ?").bind(userId),
@@ -405,7 +426,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     if (method === "POST" && pathname === "/v1/auth/logout") {
 
-      return json({ ok: true }, 200);
+      return handleAuthLogout(request, env);
 
     }
 
@@ -554,7 +575,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     }
 
-    const res = await authLogin(env, { email: creds.email || "", password: creds.password || "" });
+    const meta = buildSessionInsertMeta(request, deviceId);
+
+    const res = await authLogin(env, { email: creds.email || "", password: creds.password || "" }, meta);
 
     if (!res.ok) return res;
 
@@ -640,7 +663,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     }
 
-    const res = await authSignup(env, { email: creds.email || "", password: creds.password || "" });
+    const meta = buildSessionInsertMeta(request, deviceId);
+
+    const res = await authSignup(env, { email: creds.email || "", password: creds.password || "" }, meta);
 
     if (!res.ok) return res;
 
@@ -789,8 +814,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
 
   if (method === "POST" && sub === "/auth/logout") {
-    return json({ ok: true }, 200);
+    return handleAuthLogout(request, env);
   }
+
+  const meAccountRes = await handleMeAccountRoutes(request, env, sub, method);
+
+  if (meAccountRes) return meAccountRes;
 
   if (method === "POST" && sub === "/auth/entitlement") {
     return handleBusinessAuthEntitlement(request, env);
@@ -815,6 +844,15 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const solSiteLogRes = await handleSolanaSiteLogRoute(request, env, sub, method);
 
   if (solSiteLogRes) return solSiteLogRes;
+
+  const solTokenDiscordRes = await handleSolanaSiteTokenDiscordNotifyRoute(
+    request,
+    env,
+    sub,
+    method
+  );
+
+  if (solTokenDiscordRes) return solTokenDiscordRes;
 
   const solOtcRes = await handleSolanaSiteEcosystemOtcRoutes(request, env, sub, method);
 

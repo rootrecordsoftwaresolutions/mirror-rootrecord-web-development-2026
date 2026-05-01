@@ -45,6 +45,8 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 #   (paste full https://discord.com/api/webhooks/... URL — never commit it to git)
 # Next.js solanasite POST /api/solana-site/log → Worker (must match site env SOLANA_SITE_LOG_SECRET):
 #   wrangler secret put SOLANA_SITE_LOG_SECRET
+# New-mint Discord embed (Next proxies POST /api/solana-site/token-discord-notify with same Bearer):
+#   wrangler secret put DISCORD_TOKEN_CREATE_WEBHOOK_URL
 #
 # Treasury OTC D1 + history on this Worker (`ecosystem_otc_fulfillments`):
 #   wrangler d1 migrations apply root-record --remote
@@ -58,4 +60,8 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 #   wrangler secret put RR_PUSH_ADMIN_SECRET
 #   wrangler secret put FCM_SERVICE_ACCOUNT_JSON
 # (paste your Firebase service account JSON — one secret; optional split vars still supported)
+#
+# Email change (POST /api/me/email/request → Resend):
+#   wrangler secret put RESEND_API_KEY   # re_...
+#   wrangler secret put RESEND_FROM      # e.g. "RootRecord <mail@yourdomain.com>" (verified domain in Resend)
 

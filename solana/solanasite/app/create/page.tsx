@@ -42,6 +42,7 @@ import { defaultExtensions, type ExtensionState } from '@/lib/schema';
 import { Token2022Section } from '@/components/create/Token2022Section';
 import { WalletMultiButton } from '@/components/wallet/WalletButton';
 import { logSolanaSiteAction, SiteAction } from '@/lib/actionLog';
+import { notifyDiscordTokenCreated } from '@/lib/discordTokenNotify';
 
 export default function CreateTokenPage() {
   const wallet = useWallet();
@@ -205,8 +206,9 @@ export default function CreateTokenPage() {
         usedToken2022: extensions.enabled,
       });
       if (wallet.publicKey) {
+        const walletStr = wallet.publicKey.toBase58();
         logSolanaSiteAction({
-          wallet: wallet.publicKey.toBase58(),
+          wallet: walletStr,
           action: SiteAction.TOKEN_CREATE,
           route: '/create',
           signature: result.signature,
@@ -216,6 +218,17 @@ export default function CreateTokenPage() {
             name: values.name,
             token2022: extensions.enabled,
           }),
+        });
+        notifyDiscordTokenCreated({
+          mint: result.mint,
+          signature: result.signature,
+          creator: walletStr,
+          name: values.name,
+          symbol: values.symbol,
+          uri: metadataUri || undefined,
+          network:
+            process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim() || 'mainnet-beta',
+          token2022: extensions.enabled,
         });
       }
     } catch (err) {
