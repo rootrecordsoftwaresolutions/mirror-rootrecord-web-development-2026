@@ -44,7 +44,7 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 # In-app feedback (Business Manager, Account Hub, Weather mobile → POST /api/feedback):
 #   wrangler secret put DISCORD_FEEDBACK_WEBHOOK_URL
 #   (paste full https://discord.com/api/webhooks/... URL — never commit it to git)
-# Next.js solanasite POST /api/solana-site/log → Worker (must match site env SOLANA_SITE_LOG_SECRET):
+# Next.js Solana Tools site POST /api/solana-site/log → Worker (must match site env SOLANA_SITE_LOG_SECRET):
 #   wrangler secret put SOLANA_SITE_LOG_SECRET
 # New-mint Discord embed (Next proxies POST /api/solana-site/token-discord-notify with same Bearer):
 #   wrangler secret put DISCORD_TOKEN_CREATE_WEBHOOK_URL
@@ -53,7 +53,7 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 #   wrangler d1 migrations apply root-record --remote
 #   (migrations 0012 + 0013 in ./migrations/)
 #
-# When the solanasite hostname proxies /api/* here first, forward Next-only routes to Vercel:
+# When the Solana Tools hostname proxies /api/* here first, forward Next-only routes to Vercel:
 #   wrangler secret put SOLANA_TOOLS_API_FORWARD_URL
 #   Value: https://<project>.vercel.app   (no trailing slash)
 

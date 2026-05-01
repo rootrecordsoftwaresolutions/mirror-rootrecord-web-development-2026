@@ -45,3 +45,4 @@ coverage/
 
 # Nested Worker mirror under Next app — develop Workers from /cloudflare/rootrecord-primary only
 solana/solanasite/cloudflare/
+solana/solana-rootrecord-site/cloudflare/

@@ -302,7 +302,11 @@ export function AccountPageClient() {
       return;
     }
     const ok1 = window.confirm(
-      'Delete your RootRecord account?\n\nThis permanently deletes your portal account and any server-stored data tied to it. This cannot be undone.',
+      'Delete your RootRecord account?\n\n' +
+        'This removes your portal profile and server data (saved locations, notifications). ' +
+        'It also removes your custodial web wallet from RootRecord: SOL, RRTT, and other SPL tokens in that wallet are sent back to the treasury, then your keys are deleted. ' +
+        'Withdraw first if you want to keep any balance in your own wallet. ' +
+        'If the on-chain return step fails, deletion is cancelled. This cannot be undone once it succeeds.',
     );
     if (!ok1) return;
     const typed = window.prompt('Type DELETE to confirm account deletion.');
@@ -902,8 +906,13 @@ export function AccountPageClient() {
             <CardContent className="pt-6 space-y-3">
               <h3 className="text-base font-semibold text-foreground">Danger zone</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Deleting your account permanently removes your RootRecord portal profile and any server-stored data tied
-                to it (saved locations, notifications).
+                Deleting your account removes your RootRecord portal profile and server-stored data (saved locations,
+                notifications). It also ends your{' '}
+                <strong className="text-foreground font-medium">custodial web wallet</strong> here: RootRecord returns{' '}
+                <strong className="text-foreground font-medium">SOL, RRTT, and other SPL tokens</strong> from that
+                wallet to our treasury, then deletes your encrypted wallet record. Anything you want to keep under your
+                own control should be <strong className="text-foreground font-medium">withdrawn first</strong>. If the
+                on-chain sweep cannot complete, deletion is blocked until that is fixed.
               </p>
               <Button
                 type="button"

@@ -114,7 +114,7 @@ export interface Env {
 
   DISCORD_FEEDBACK_WEBHOOK_URL?: string;
 
-  /** Bearer secret for POST /api/solana-site/log from the Next solanasite (`wrangler secret put SOLANA_SITE_LOG_SECRET`). */
+  /** Bearer secret for POST /api/solana-site/log from the Next Solana Tools site (`wrangler secret put SOLANA_SITE_LOG_SECRET`). */
 
   SOLANA_SITE_LOG_SECRET?: string;
 
@@ -123,7 +123,7 @@ export interface Env {
   DISCORD_TOKEN_CREATE_WEBHOOK_URL?: string;
 
   /**
-   * When this Worker fronts the solanasite hostname, forward Next-only `/api/ecosystem/*` (and
+   * When this Worker fronts the Solana Tools hostname, forward Next-only `/api/ecosystem/*` (and
    * selected `/api/solana-site/*` paths) to the Vercel origin — no trailing slash.
    * Native Worker routes (no forward): POST `/api/solana-site/log`, POST `/api/solana-site/token-discord-notify`,
    * and `/api/solana-site/ecosystem-otc*`. `wrangler secret put SOLANA_TOOLS_API_FORWARD_URL`

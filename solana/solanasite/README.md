@@ -1,5 +1,9 @@
 # RootRecord Solana Tools
 
+> **Deploy / git:** The public app is built from **`https://github.com/RootRecord/solana-rootrecord-site`** (`main`).  
+> This copy inside **Web-Development-2026** should live at `Web/solana/solana-rootrecord-site` (run `Web/solana/rename-solanasite-folder.ps1` if the folder is still named `solanasite`).  
+> See **`Web/solana/SOLANA-SITE-CANONICAL-REPO.md`** — pushing only the monorepo does not update production unless you also push that repo.
+
 Fast, cheap, on-chain SPL token creator and management suite for Solana —
 designed as a calm, no-BS extension of [rootrecord.info](https://rootrecord.info).
 
