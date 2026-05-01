@@ -22,7 +22,7 @@
   <meta property="og:url" content="https://rootrecord.info/beta-tester-rewards.html">
   <meta property="og:image" content="https://rootrecord.info/assets/og.jpg">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="stylesheet" href="/styles.css?v=8">
+  <link rel="stylesheet" href="/styles.css?v=11">
 </head>
 <body>
   <div class="site">
@@ -70,6 +70,32 @@
 
       <section class="section">
         <div class="container-narrow prose">
+          <div class="cta-row" style="margin: 0 0 1.25rem;">
+            <a class="btn btn-primary btn-arrow" href="https://groups.google.com/g/rootrecordtesting" target="_blank" rel="noopener">Become a Beta Tester</a>
+            <a class="btn btn-secondary" href="/contact.html">Questions?</a>
+          </div>
+
+          <section class="card-plain rewards-balance-card" style="margin: 0 0 1.5rem;" aria-label="Your beta tester reward balance">
+            <p id="rewards-balance-status" class="status" role="status" hidden></p>
+            <div id="panel-rewards-loading">
+              <p style="margin:0;color:var(--ink-muted)">Loading your balance&hellip;</p>
+            </div>
+            <div id="panel-rewards-guest" hidden>
+              <h2 class="rewards-balance-card-title">Usage reward balance</h2>
+              <p class="note" style="margin-top:0;margin-bottom:1rem">Sign in with your <strong>rootrecord.info</strong> account to see your current usage reward balance.</p>
+              <a class="btn btn-primary" href="/account.html" data-testid="rewards-login-cta">Login to view balance</a>
+            </div>
+            <div id="panel-rewards-main" hidden>
+              <h2 class="rewards-balance-card-title">Your usage reward balance</h2>
+              <p style="margin:0.35rem 0 0;font-size:1.25rem;line-height:1.3">
+                <strong class="rewards-balance" id="beta-rewards-balance-val" data-testid="beta-rewards-page-balance">&mdash;</strong>
+              </p>
+              <p class="note" style="margin-top:0.75rem;margin-bottom:0">This is the same running total shown in participating beta apps when you are signed in.</p>
+            </div>
+          </section>
+
+          <p><strong>How to get the downloads:</strong> join the Google Group above. That group is where we post closed-testing access and download links.</p>
+
           <h2>What you see in the app</h2>
           <p>Participating apps may show a single line such as <strong>Beta Tester Rewards :</strong> followed by a number. That is your current <strong>usage reward balance</strong> for the program. Tap the row to open this page for full context.</p>
 
@@ -109,5 +135,24 @@
   </div>
   <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
   <script src="/site-nav.js?v=2" defer></script>
+  <script>
+    (function () {
+      var TOKEN_KEY = "rootrecord_portal_token";
+      function showRewardsPanel(name) {
+        var map = { loading: "panel-rewards-loading", guest: "panel-rewards-guest", main: "panel-rewards-main" };
+        var target = map[name] || map.loading;
+        ["panel-rewards-loading", "panel-rewards-guest", "panel-rewards-main"].forEach(function (id) {
+          var n = document.getElementById(id);
+          if (n) n.hidden = id !== target;
+        });
+      }
+      try {
+        if (!localStorage.getItem(TOKEN_KEY)) showRewardsPanel("guest");
+      } catch (e) {
+        showRewardsPanel("guest");
+      }
+    })();
+  </script>
+  <script src="/beta-tester-rewards.js?v=1" defer></script>
 </body>
 </html>

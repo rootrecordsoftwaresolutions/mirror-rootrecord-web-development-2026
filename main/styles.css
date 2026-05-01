@@ -433,8 +433,26 @@ section { position: relative; }
   font-size: clamp(1.05rem, 1.4vw, 1.2rem);
   color: var(--ink-soft);
   line-height: 1.65;
-  max-width: 40ch;
-  margin: 0 0 2rem;
+  max-width: 48ch;
+  margin: 0 0 1.25rem;
+}
+
+/* Homepage: moss strip under hero lead (platform tagline). */
+.hero-platform-line {
+  margin: 0 0 1.75rem;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--moss-bright);
+  line-height: 1.55;
+  max-width: 42rem;
+}
+
+.hero-title-brand {
+  font-weight: 400;
+  letter-spacing: -0.03em;
 }
 
 .hero-ctas {
@@ -1387,6 +1405,10 @@ section { position: relative; }
 
 .card-plain h2:first-child { margin-top: 0; }
 
+.rewards-balance-card .rewards-balance-card-title {
+  margin-top: 0;
+}
+
 .card-plain .lead {
   color: var(--ink-soft);
   font-size: 1rem;
@@ -1427,7 +1449,69 @@ section { position: relative; }
 
 .stack-form input::placeholder { color: var(--ink-muted); }
 
+.stack-form textarea,
+.stack-form select {
+  font: inherit;
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.75rem 0.95rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  color: var(--ink);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+/* Native <select> often ignores themed backgrounds until appearance is reset (esp. Windows / Chrome). */
+.stack-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  padding-right: 2.5rem;
+  background-color: var(--bg-1);
+  color-scheme: dark;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25L7 8.75l3.5-3.5' stroke='%236F8A7E' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 14px 14px;
+}
+
+.stack-form select:hover {
+  border-color: rgba(167, 230, 178, 0.32);
+}
+
+.stack-form select:focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25L7 8.75l3.5-3.5' stroke='%233FE28D' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.stack-form select::-ms-expand {
+  display: none;
+}
+
+.stack-form select option,
+.stack-form select optgroup {
+  background-color: var(--surface);
+  color: var(--ink);
+}
+
+.stack-form textarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.stack-form textarea::placeholder { color: var(--ink-muted); }
+
 .stack-form input:focus {
+  outline: none;
+  border-color: var(--moss);
+  box-shadow: 0 0 0 3px rgba(63, 226, 141, 0.18);
+}
+
+.stack-form textarea:focus,
+.stack-form select:focus {
   outline: none;
   border-color: var(--moss);
   box-shadow: 0 0 0 3px rgba(63, 226, 141, 0.18);
