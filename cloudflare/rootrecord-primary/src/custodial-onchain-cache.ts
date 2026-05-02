@@ -36,6 +36,7 @@ async function sumMintRawForOwner(
 ): Promise<{ totalRaw: bigint; ok: boolean }> {
   let totalRaw = 0n;
   let anyRpcSuccess = false;
+  let infraFailures = 0;
   for (const programId of [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]) {
     try {
       const { value } = await connection.getParsedTokenAccountsByOwner(owner, { programId });
@@ -65,12 +66,11 @@ async function sumMintRawForOwner(
         totalRaw += BigInt(String(info.tokenAmount?.amount ?? "0"));
       }
     } catch (e) {
-      if (isLikelyInfraRpcError(e)) {
-        return { totalRaw: 0n, ok: false };
-      }
-      /* malformed / empty owner scan — continue to next program */
+      if (isLikelyInfraRpcError(e)) infraFailures += 1;
+      /* try next program; malformed responses are ignored */
     }
   }
+  if (!anyRpcSuccess && infraFailures > 0) return { totalRaw: 0n, ok: false };
   return { totalRaw, ok: anyRpcSuccess };
 }
 
