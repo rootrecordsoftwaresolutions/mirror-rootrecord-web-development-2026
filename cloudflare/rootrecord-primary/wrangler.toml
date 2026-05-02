@@ -38,6 +38,8 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 # RRTT SPL (Solana mainnet): custodial balance cache + treasury→custodial cron (`RRTT_TREASURY_SECRET_KEY_B58` = secret only).
 RRTT_MINT_BASE58 = "6KfGKe13ASrV5WHvChbapQXxxEFRNqwpwrdEVsX6RQMT"
 RRTT_DECIMALS = "9"
+# Treasury→custodial RRTT per cron: 1 = full pending gap, 0.5 = half (set back to 1 after a payout wave if you want full sends again).
+RRTT_TREASURY_TRANSFER_FRACTION = "0.5"
 
 # Internal custodial wallet encryption (AES-256-GCM). deploy.ps1 uploads INTERNAL_WALLET_ENC_KEY_B64
 # (from credentials.env, or .deploy-internal-wallet-key, or auto-generated like JWT_SECRET).
@@ -62,6 +64,8 @@ RRTT_DECIMALS = "9"
 
 # One-time / ops: provision custodial wallets for all `license_accounts` missing `internal_solana_wallets`
 # (POST /api/internal/provision-custodial-wallets-missing, same X-RR-Push-Admin-Key as push-broadcast).
+# Run treasury SOL top-up + RRTT payout cron immediately (same as 07:00 UTC schedule):
+#   POST https://api.rootrecord.info/api/internal/run-rrtt-custodial-cron  (header X-RR-Push-Admin-Key: …)
 #   powershell -NoProfile -File ./provision-custodial-backfill.ps1
 #
 # All-device FCM broadcast (POST /api/internal/push-broadcast):

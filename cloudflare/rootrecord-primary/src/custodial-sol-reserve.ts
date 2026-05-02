@@ -11,7 +11,8 @@ import {
  * Treasury tops custodial native SOL up to this floor (see `runRrttCustodialPayoutCron`).
  * Custodial `/sign` must not approve txs that would spend below this (withdrawal fee reserve).
  */
-export const CUSTODIAL_SOL_RESERVE_LAMPORTS = 500_000; // 0.0005 SOL
+/** Floor for treasury SOL top-ups and minimum native SOL custodial should hold (rent + fees). */
+export const CUSTODIAL_SOL_RESERVE_LAMPORTS = 1_000_000; // 0.001 SOL
 
 /** Lamports reserved on top of {@link CUSTODIAL_SOL_RESERVE_LAMPORTS} when validating signed spends (tx fee headroom). */
 export const CUSTODIAL_SOL_SIGN_FEE_BUFFER_LAMPORTS = 100_000;

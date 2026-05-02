@@ -22,6 +22,7 @@ import {
   handleCustodialInternalBackfillRoute,
   handleCustodialSolWalletV1,
   handleCustodialWithdrawDestV1,
+  handleRunRrttCustodialCronRoute,
   handleSolanaInternalWalletRoutes,
   provisionCustodialWalletIfMissing,
 } from "./solana-internal-wallet";
@@ -145,6 +146,10 @@ export interface Env {
   RRTT_DECIMALS?: string;
   /** Treasury keypair secret key base58 (same encoding as Phantom export). */
   RRTT_TREASURY_SECRET_KEY_B58?: string;
+  /**
+   * Fraction of pending earn→custodial RRTT each daily cron (1 = full gap, 0.5 = half). Set back to 1 after a payout wave if desired.
+   */
+  RRTT_TREASURY_TRANSFER_FRACTION?: string;
 
   /**
    * Days without activity before scheduled purge (cron `45 8 * * * UTC`). Activity = latest session
@@ -909,6 +914,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const custodialBackfillRes = await handleCustodialInternalBackfillRoute(request, env, sub, method);
 
   if (custodialBackfillRes) return custodialBackfillRes;
+
+  const rrttCronRes = await handleRunRrttCustodialCronRoute(request, env, sub, method);
+
+  if (rrttCronRes) return rrttCronRes;
 
   const pushRes = await handlePushRoutes(request, env, sub, method);
 
