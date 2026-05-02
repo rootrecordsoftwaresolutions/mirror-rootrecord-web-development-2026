@@ -55,6 +55,11 @@ RRTT_DECIMALS = "9"
 # New-mint Discord embed (Next proxies POST /api/solana-site/token-discord-notify with same Bearer):
 #   wrangler secret put DISCORD_TOKEN_CREATE_WEBHOOK_URL
 #
+# Observability: every request logs one JSON line (`msg: http_request`, path redacted, status, ms, colo, ray).
+# 5xx and very slow requests (≥25s) are also written to D1 `worker_http_error_events` (apply migration 0029).
+# Pruned daily (cron 45 8 * * *). Operator read: GET /api/internal/recent-http-errors?limit=50 (X-RR-Push-Admin-Key).
+# In Cloudflare Dashboard enable Workers Logs + optional Logpush to your SIEM for retention beyond the console.
+#
 # Treasury OTC D1 + history on this Worker (`ecosystem_otc_fulfillments`):
 #   wrangler d1 migrations apply root-record --remote
 #   (migrations 0012 + 0013 in ./migrations/)

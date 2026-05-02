@@ -11,7 +11,7 @@ import { createStripeSubscriptionCheckout } from "./billing-stripe";
 
 import { handleLocations } from "./locations";
 
-import { handlePushRoutes } from "./push";
+import { handlePushRoutes, verifyWorkerOpsAdmin } from "./push";
 import { handlePrefsRoutes } from "./prefs";
 import { handleEarnRoutes } from "./earn";
 import { handleBusinessRoutes, handleBusinessAuthEntitlement, bmWipeOwnedRows } from "./business-mobile";
@@ -33,6 +33,7 @@ import { maybeForwardSolanaToolsApi } from "./solana-tools-forward";
 import { handleSolanaAppActivityRoute } from "./solana-app-activity";
 import { handleSolanaLinkedWalletRoute } from "./solana-linked-wallet";
 import { handleCustodialRrttWithdrawV1 } from "./custodial-rrtt-withdraw";
+import { readRecentHttpErrorEvents } from "./observability";
 
 import {
 
@@ -1084,6 +1085,21 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       },
       200
     );
+  }
+
+  if (method === "GET" && sub === "/internal/recent-http-errors") {
+    const secret = (env.RR_PUSH_ADMIN_SECRET || "").trim();
+    if (!secret) {
+      return json({ detail: "RR_PUSH_ADMIN_SECRET is not set on this Worker." }, 503);
+    }
+    const adminOk = await verifyWorkerOpsAdmin(request, env);
+    if (!adminOk) {
+      const has = Boolean(request.headers.get("X-RR-Push-Admin-Key"));
+      return json({ detail: has ? "Invalid admin key." : "Missing X-RR-Push-Admin-Key header." }, 401);
+    }
+    const lim = Math.min(200, Math.max(1, Math.floor(num(q, "limit") ?? 50)));
+    const events = await readRecentHttpErrorEvents(env.DB, lim);
+    return json({ ok: true, events, limit: lim }, 200);
   }
 
   if (method === "GET" && sub === "/canada/alerts" && lat != null && lon != null) {
