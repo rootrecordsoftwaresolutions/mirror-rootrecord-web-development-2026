@@ -267,15 +267,18 @@ export function AccountPageClient() {
     setStatus({ msg, kind });
   };
 
-  const loadAccount = useCallback(async () => {
+  const loadAccount = useCallback(async (softRefresh?: boolean) => {
+    const soft = Boolean(softRefresh);
     const token = getPortalToken();
     if (!token || !hasApi) {
       syncPortalLifetimeFromMe(null);
       setPhase('forms');
       return;
     }
-    setPhase('loading');
-    applyStatus('', '');
+    if (!soft) {
+      setPhase('loading');
+      applyStatus('', '');
+    }
     const r = await fetchPortalMe(token);
     if (r.ok === false && r.status === 401) {
       clearPortalSession();
@@ -287,17 +290,23 @@ export function AccountPageClient() {
       return;
     }
     if (r.ok === false) {
-      setMe(null);
-      setEarn(null);
-      setLedger(null);
-      setLedgerErr('');
+      if (!soft) {
+        setMe(null);
+        setEarn(null);
+        setLedger(null);
+        setLedgerErr('');
+        applyStatus('We could not load your account. Please try again in a moment.', 'err');
+      } else {
+        applyStatus('Could not refresh your account. Will retry automatically.', 'warn');
+      }
       setPhase('account');
-      applyStatus('We could not load your account. Please try again in a moment.', 'err');
       return;
     }
-    const e = await fetchEarnSummary(token);
     setLedgerErr('');
-    const lg = await fetchRewardsLedger(token, { limit: 100, offset: 0 });
+    const [e, lg] = await Promise.all([
+      fetchEarnSummary(token),
+      fetchRewardsLedger(token, { limit: 25, offset: 0 }),
+    ]);
     if (lg.ok) setLedger(lg.data);
     else {
       setLedger(null);
@@ -319,10 +328,10 @@ export function AccountPageClient() {
   useEffect(() => {
     if (phase !== 'account' || !hasApi) return;
     const id = setInterval(() => {
-      void loadAccount();
+      void loadAccount(true);
     }, 45_000);
     const onVis = () => {
-      if (document.visibilityState === 'visible') void loadAccount();
+      if (document.visibilityState === 'visible') void loadAccount(true);
     };
     document.addEventListener('visibilitychange', onVis);
     return () => {
@@ -481,7 +490,7 @@ export function AccountPageClient() {
         return;
       }
       toast.success('Wallet linked to your account');
-      await loadAccount();
+      await loadAccount(true);
     } catch (err) {
       const net = err instanceof Error ? err.message : '';
       if (/User rejected|rejected request|cancel/i.test(net)) {
@@ -516,7 +525,7 @@ export function AccountPageClient() {
       return;
     }
     toast.success('Linked wallet removed');
-    await loadAccount();
+    await loadAccount(true);
   }
 
   async function onGenerateCustodialWallet() {
@@ -534,7 +543,7 @@ export function AccountPageClient() {
       return;
     }
     toast.success('Custodial wallet ready');
-    await loadAccount();
+    await loadAccount(true);
   }
 
   async function onLoadMoreLedger() {
@@ -583,7 +592,7 @@ export function AccountPageClient() {
       return;
     }
     toast.success('Withdrawal address saved');
-    await loadAccount();
+    await loadAccount(true);
   }
 
   async function onWithdrawRrtt() {
@@ -612,7 +621,7 @@ export function AccountPageClient() {
       }
       toast.success(`Sent ${r.amount_whole.toLocaleString()} RRTT — ${r.tx_signature.slice(0, 12)}…`);
       setWithdrawAmtWhole('');
-      await loadAccount();
+      await loadAccount(true);
     } finally {
       setWithdrawBusy(false);
     }
