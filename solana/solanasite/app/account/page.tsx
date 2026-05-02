@@ -5,7 +5,7 @@ import { AccountPageClient } from '@/components/account/AccountPageClient';
 export const metadata: Metadata = {
   title: 'Account',
   description:
-    'Sign in to your RootRecord account for subscription status and billing — same credentials as rootrecord.info.',
+    'Sign in with the same email and password as rootrecord.info — plan, rewards, and wallets in one place.',
   robots: { index: false, follow: true },
 };
 
