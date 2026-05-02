@@ -10,7 +10,15 @@ import {
   getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
 
-import { RPC_URL } from '@/lib/solana';
+import { RPC_URL, SOLANA_NETWORK } from '@/lib/solana';
+
+/** Native USDC mint for custodial SPL read (matches ecosystem tooling). */
+const USDC_MINT_MAINNET = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const USDC_MINT_DEVNET = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEGERXfW9vpM8Xo';
+
+function usdcMintBase58(): string {
+  return SOLANA_NETWORK === 'devnet' ? USDC_MINT_DEVNET : USDC_MINT_MAINNET;
+}
 
 const PUBLIC_FALLBACKS = [
   'https://api.mainnet-beta.solana.com',
@@ -109,7 +117,14 @@ async function readOnce(
   custodialB58: string,
   mintB58: string,
   decimals: number,
-): Promise<{ rrtt: number | null; lamports: number; solOk: boolean; tokenOk: boolean }> {
+): Promise<{
+  rrtt: number | null;
+  lamports: number;
+  solOk: boolean;
+  tokenOk: boolean;
+  usdcRaw: bigint;
+  usdcOk: boolean;
+}> {
   const connection = new Connection(rpcUrl, 'confirmed');
   const mint = new PublicKey(mintB58);
   const owner = new PublicKey(custodialB58);
@@ -131,7 +146,9 @@ async function readOnce(
     tokenOk = fb.ok;
     if (fb.ok && fb.whole != null) rrtt = fb.whole;
   }
-  return { rrtt, lamports, solOk, tokenOk };
+  const usdcMint = new PublicKey(usdcMintBase58());
+  const usdcScan = await sumMintRaw(connection, usdcMint, owner);
+  return { rrtt, lamports, solOk, tokenOk, usdcRaw: usdcScan.totalRaw, usdcOk: usdcScan.ok };
 }
 
 export type CustodialChainBalances = {
@@ -139,6 +156,9 @@ export type CustodialChainBalances = {
   lamports: number | null;
   solOk: boolean;
   tokenOk: boolean;
+  /** USDC raw amount (10^6) when usdcOk. */
+  usdcRaw: bigint | null;
+  usdcOk: boolean;
   /** True if at least one leg read from RPC. */
   ok: boolean;
 };
@@ -156,6 +176,8 @@ export async function fetchCustodialMainnetBalances(
   let lamports: number | null = null;
   let solOk = false;
   let tokenOk = false;
+  let usdcRaw: bigint | null = null;
+  let usdcOk = false;
   for (const url of rpcCandidates()) {
     try {
       const r = await readOnce(url, custodialPubkeyB58.trim(), mintB58.trim(), dec);
@@ -169,11 +191,15 @@ export async function fetchCustodialMainnetBalances(
         tokenOk = true;
         rrttWhole = r.rrtt;
       }
-      if (solOk && tokenOk) break;
+      if (r.usdcOk && !usdcOk) {
+        usdcOk = true;
+        usdcRaw = r.usdcRaw;
+      }
+      if (solOk && tokenOk && usdcOk) break;
     } catch {
       /* next RPC */
     }
   }
-  const ok = solOk || tokenOk;
-  return { rrttWhole, lamports, solOk, tokenOk, ok };
+  const ok = solOk || tokenOk || usdcOk;
+  return { rrttWhole, lamports, solOk, tokenOk, usdcRaw, usdcOk, ok };
 }

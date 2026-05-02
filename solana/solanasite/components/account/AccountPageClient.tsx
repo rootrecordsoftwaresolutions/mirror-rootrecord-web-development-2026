@@ -128,15 +128,23 @@ function shortenPubkey(s: string): string {
   return `${t.slice(0, 8)}…${t.slice(-6)}`;
 }
 
+/** Exact token string from non-negative raw amount and decimals (no float math). */
+function formatRawBaseUnitsExact(raw: bigint, decimals: number, suffix: string): string {
+  const d = Math.min(18, Math.max(0, Math.floor(decimals)));
+  const div = BigInt(10) ** BigInt(d);
+  const r = raw < 0n ? 0n : raw;
+  const whole = r / div;
+  let frac = (r % div).toString().padStart(d, '0');
+  frac = frac.replace(/0+$/, '');
+  if (!frac) return `${whole.toString()} ${suffix}`;
+  return `${whole.toString()}.${frac} ${suffix}`;
+}
+
 /** Exact SOL string from integer lamports (no float math; trims trailing fractional zeros only). */
 function formatLamportsAsSolExact(lamports: bigint | number): string {
-  const lam = typeof lamports === 'bigint' ? (lamports < 0n ? 0n : lamports) : BigInt(Math.max(0, Math.floor(Number(lamports) || 0)));
-  const SOL = 1_000_000_000n;
-  const whole = lam / SOL;
-  let frac = (lam % SOL).toString().padStart(9, '0');
-  frac = frac.replace(/0+$/, '');
-  if (!frac) return `${whole.toString()} SOL`;
-  return `${whole.toString()}.${frac} SOL`;
+  const lam =
+    typeof lamports === 'bigint' ? (lamports < 0n ? 0n : lamports) : BigInt(Math.max(0, Math.floor(Number(lamports) || 0)));
+  return formatRawBaseUnitsExact(lam, 9, 'SOL');
 }
 
 const SOLSCAN_ACCOUNT_BASE = 'https://solscan.io/account/';
@@ -171,7 +179,7 @@ function BalanceStat({
 }: {
   label: string;
   value: ReactNode;
-  hint?: string;
+  hint?: ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-border/60 bg-background/35 px-3 py-2.5">
@@ -207,16 +215,7 @@ function RewardsProgramNote({ earn }: { earn: EarnSummary | null }) {
       </p>
     );
   }
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        <span className="text-foreground font-medium">How to read this:</span> the earn ledger is your credited
-        rewards total. &ldquo;Not yet in custodial wallet&rdquo; is what has not yet shown up as SPL on your custodial
-        address. <span className="text-foreground font-medium">RRTT in the custodial wallet is available to withdraw</span>{' '}
-        (same number as &ldquo;Available to withdraw&rdquo;). Total = ledger + in-wallet SPL. {learn}
-      </p>
-    </div>
-  );
+  return null;
 }
 
 function formatLedgerWhen(iso: string): string {
@@ -613,13 +612,29 @@ export function AccountPageClient() {
     earn != null && Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : null;
   /** Ledger lifetime + SPL in custodial (135,800 + 1 = 135,801). Always from displayed wallet balance. */
   const sumLedgerWallet = totalEarnUnits != null ? totalEarnUnits + rrttInWallet : null;
-  const sentUnits = earn != null ? numEarn(earn, 'custodial_units_sent') : 0;
+  /** So Total = pending + in-wallet SPL (e.g. 135,801 = 135,800 + 1). */
   const pendingUnits =
-    totalEarnUnits != null ? Math.max(0, totalEarnUnits - Math.max(sentUnits, rrttInWallet)) : null;
+    sumLedgerWallet != null ? Math.max(0, sumLedgerWallet - rrttInWallet) : null;
   /** RRTT in the custodial SPL account is what the user can withdraw from that account. */
   const availWithdraw = rrttInWallet;
   const savedWithdrawDest =
     me && typeof me.withdraw_dest_pubkey === 'string' ? me.withdraw_dest_pubkey.trim() : '';
+
+  const usdcDisplay =
+    chainBal?.usdcOk === true && chainBal.usdcRaw != null
+      ? formatRawBaseUnitsExact(chainBal.usdcRaw, 6, 'USDC')
+      : null;
+
+  const balancesLearnLink = (
+    <a
+      href={portalAbsoluteUrl('/beta-tester-rewards.html')}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-sol-green hover:underline font-medium"
+    >
+      Learn more
+    </a>
+  );
 
   return (
     <div className="container py-8 md:py-12 max-w-4xl">
@@ -784,7 +799,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Ledger total minus what is already reflected in your custodial SPL balance (treasury sends close this gap)."
+                  hint="Ledger portion of the headline total. It plus in-wallet RRTT (green) equals Total RRTT."
                 />
                 <BalanceStat
                   label="Available to withdraw"
@@ -798,17 +813,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Same as “RRTT in custodial wallet”: SPL already at your custodial address is what you can move out in a withdrawal."
-                />
-                <BalanceStat
-                  label="RRTT in custodial wallet"
-                  value={
-                    <>
-                      {rrttInWallet.toLocaleString()}{' '}
-                      <span className="text-muted-foreground font-medium text-sm">RRTT</span>
-                    </>
-                  }
-                  hint="What Solana shows for this mint at your custodial address (API + browser mainnet read)."
+                  hint="RRTT SPL already in your custodial wallet — what you can move out in a withdrawal (browser or API read)."
                 />
                 <BalanceStat
                   label="SOL in custodial wallet"
@@ -822,6 +827,29 @@ export function AccountPageClient() {
                     )
                   }
                   hint="Native SOL from integer lamports (browser RPC when available, else API cache). Shown as exact decimal SOL, not rounded float."
+                />
+                <BalanceStat
+                  label="USDC in custodial wallet"
+                  value={
+                    usdcDisplay != null ? (
+                      <span className="font-mono text-sm tabular-nums">{usdcDisplay}</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )
+                  }
+                  hint="SPL USDC at your custodial address on this cluster (browser mainnet/devnet read)."
+                />
+                <BalanceStat
+                  label="How to read this"
+                  value={
+                    <span className="block text-xs font-normal font-sans leading-relaxed text-muted-foreground tracking-normal">
+                      The earn ledger is your credited rewards total. &ldquo;Not yet in custodial wallet&rdquo; is the
+                      ledger slice that pairs with in-wallet RRTT so the headline total stays consistent.{' '}
+                      <span className="text-foreground font-medium">RRTT in the custodial wallet is available to withdraw</span>{' '}
+                      (same number as &ldquo;Available to withdraw&rdquo;). Total = ledger + in-wallet SPL.{' '}
+                      {balancesLearnLink}
+                    </span>
+                  }
                 />
               </div>
               <RewardsProgramNote earn={earn} />
