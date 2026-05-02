@@ -4,7 +4,10 @@ export function cors(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, X-Guest-Id, Content-Type",
+    // Include Cache-Control / Pragma: mobile axios adds no-cache (httpResilience); without these,
+    // browsers send a preflight that fails Allow-Headers and the app sees ERR_NETWORK for every call.
+    "Access-Control-Allow-Headers":
+      "Authorization, X-Guest-Id, Content-Type, Cache-Control, Pragma",
     "Access-Control-Max-Age": "86400",
   };
 }
