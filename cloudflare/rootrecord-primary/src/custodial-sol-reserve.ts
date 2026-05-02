@@ -9,7 +9,7 @@ import {
 
 /**
  * Treasury tops custodial native SOL up to this floor (see `runRrttCustodialPayoutCron`).
- * Custodial `/sign` must not approve txs that would spend below this (withdrawal fee reserve).
+ * Custodial `/sign` keeps at least this much native SOL so the account can pay fees; users fund fees for SOL/USDC/other SPL moves from balance above this floor. RRTT payout fees are subsidized separately by product policy.
  */
 /** Floor for treasury SOL top-ups and minimum native SOL custodial should hold (rent + fees). */
 export const CUSTODIAL_SOL_RESERVE_LAMPORTS = 1_000_000; // 0.001 SOL

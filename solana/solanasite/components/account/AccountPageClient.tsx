@@ -764,7 +764,11 @@ export function AccountPageClient() {
               <CardTitle className="text-lg">Balances</CardTitle>
               <CardDescription className="text-muted-foreground">
                 Ledger (earn program) plus what Solana shows in your custodial wallet — API and, when mint is
-                configured, a direct mainnet read in this browser (Solscan).
+                configured, a direct mainnet read in this browser (Solscan). RootRecord covers network costs for{' '}
+                <span className="text-foreground font-medium">RRTT</span> withdrawals to your payout address; you pay
+                on-chain fees for moving <span className="text-foreground font-medium">SOL</span> (from balance above
+                the ~0.001 SOL reserve), <span className="text-foreground font-medium">USDC</span>, or other SPL from
+                this wallet.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -813,7 +817,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="RRTT SPL already in your custodial wallet — what you can move out in a withdrawal (browser or API read)."
+                  hint="RRTT SPL in your custodial wallet. RootRecord pays the fees for RRTT payout to your saved or linked address; amounts follow browser or API read."
                 />
                 <BalanceStat
                   label="SOL in custodial wallet"
@@ -826,7 +830,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Native SOL from integer lamports (browser RPC when available, else API cache). Shown as exact decimal SOL, not rounded float."
+                  hint="Exact lamports as decimal SOL. A small floor (~0.001 SOL) stays for rent and signing; any SOL above that is yours to spend on network fees when you move SOL, USDC, or other SPL yourself."
                 />
                 <BalanceStat
                   label="USDC in custodial wallet"
@@ -837,7 +841,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="SPL USDC at your custodial address on this cluster (browser mainnet/devnet read)."
+                  hint="SPL USDC at your custodial address (browser read). Withdrawing or sending USDC uses your custodial SOL (above the reserve) for Solana fees — RootRecord does not subsidize USDC moves."
                 />
                 <BalanceStat
                   label="How to read this"
@@ -847,7 +851,9 @@ export function AccountPageClient() {
                       ledger slice that pairs with in-wallet RRTT so the headline total stays consistent.{' '}
                       <span className="text-foreground font-medium">RRTT in the custodial wallet is available to withdraw</span>{' '}
                       (same number as &ldquo;Available to withdraw&rdquo;). Total = ledger + in-wallet SPL.{' '}
-                      {balancesLearnLink}
+                      <span className="text-foreground font-medium">Fees:</span> RootRecord pays network costs for RRTT
+                      withdrawals; you pay Solana fees for SOL (from balance over ~0.001 SOL), USDC, or any other token
+                      you move out. {balancesLearnLink}
                     </span>
                   }
                 />
@@ -869,7 +875,9 @@ export function AccountPageClient() {
                   <div className="min-w-0 flex-1 space-y-2">
                     <SolscanAddressLink address={custodialPk} />
                     <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
-                      Send SOL or SPL here to fund fees. Scan the QR from a phone wallet to deposit.
+                      Deposit SOL if you will move USDC, other SPL, or native SOL yourself — those use your SOL for
+                      network fees (above the ~0.001 SOL kept on the account). RRTT withdrawals to your payout address
+                      are fee-subsidized by RootRecord. Scan the QR from a phone wallet to deposit.
                     </p>
                   </div>
                   <div className="flex flex-col items-center gap-2 shrink-0 mx-auto lg:mx-0">
@@ -1134,8 +1142,9 @@ export function AccountPageClient() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Withdraw RRTT to</CardTitle>
               <CardDescription className="text-muted-foreground">
-                Optional payout address if you are not using your linked header wallet. On-chain withdraw flow is
-                next.
+                Optional payout address if you are not using your linked header wallet. RootRecord covers Solana
+                network fees for <span className="text-foreground font-medium">RRTT</span> sent from custodial to this
+                address; you remain responsible for fees on any other assets you move from the custodial wallet.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
