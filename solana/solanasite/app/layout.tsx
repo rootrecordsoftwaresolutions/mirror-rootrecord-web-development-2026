@@ -143,7 +143,7 @@ export default function RootLayout({
           <Footer />
           <Toaster
             theme="dark"
-            position="bottom-right"
+            position="bottom-center"
             toastOptions={{
               style: {
                 background: '#0A0F1A',

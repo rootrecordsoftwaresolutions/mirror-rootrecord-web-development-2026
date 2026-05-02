@@ -78,6 +78,17 @@ body {
   margin-right: 8px;
 }
 
+@media (max-width: 420px) {
+  .rr-wallet-btn .wallet-adapter-button {
+    max-width: min(11rem, 38vw);
+    padding: 0 10px !important;
+    font-size: 12px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 /* Modal styles */
 .wallet-adapter-modal-wrapper {
   background: #0a0f1a !important;

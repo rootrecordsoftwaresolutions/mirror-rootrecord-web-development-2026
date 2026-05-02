@@ -180,6 +180,38 @@ function SolscanAddressLink({ address, className }: { address: string; className
   );
 }
 
+const SOLSCAN_TX_BASE = 'https://solscan.io/tx/';
+
+function solscanTxHref(signature: string): string {
+  return `${SOLSCAN_TX_BASE}${encodeURIComponent(signature.trim())}`;
+}
+
+function SolscanTxLink({ signature, className }: { signature: string; className?: string }) {
+  const s = signature.trim();
+  if (!s) return null;
+  return (
+    <a
+      href={solscanTxHref(s)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        'inline-flex items-center gap-1.5 font-mono text-xs text-sol-green hover:underline break-all',
+        className,
+      )}
+    >
+      <span>{shortenPubkey(s)}</span>
+      <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+    </a>
+  );
+}
+
+function ledgerTxUrl(row: RewardsLedgerTransaction, explorerTxBase: string | undefined): string | null {
+  const sig = row.tx_signature?.trim();
+  if (!sig) return null;
+  const base = (explorerTxBase || SOLSCAN_TX_BASE).trim();
+  return base.endsWith('/') ? `${base}${encodeURIComponent(sig)}` : `${base}/${encodeURIComponent(sig)}`;
+}
+
 function BalanceStat({
   label,
   value,
@@ -262,6 +294,13 @@ export function AccountPageClient() {
   const [withdrawDraft, setWithdrawDraft] = useState('');
   const [withdrawAmtWhole, setWithdrawAmtWhole] = useState('');
   const [withdrawBusy, setWithdrawBusy] = useState(false);
+  /** After withdraw: success summary, or on-chain sig when the server reported ledger/update issues. */
+  const [withdrawNotice, setWithdrawNotice] = useState<{
+    tx_signature: string;
+    amount_whole: number;
+    destination: string;
+    error?: string;
+  } | null>(null);
   const [me, setMe] = useState<PortalMeData | null>(null);
   const [earn, setEarn] = useState<EarnSummary | null>(null);
   const [ledger, setLedger] = useState<RewardsLedgerPage | null>(null);
@@ -632,13 +671,30 @@ export function AccountPageClient() {
     }
     setWithdrawBusy(true);
     applyStatus('', '');
+    setWithdrawNotice(null);
     try {
       const r = await portalWithdrawRrtt(token, amount != null ? { amount_whole: amount } : {});
       if (!r.ok) {
         toast.error(r.detail);
+        if (r.tx_signature) {
+          setWithdrawNotice({
+            tx_signature: r.tx_signature,
+            amount_whole: 0,
+            destination: '',
+            error: r.detail,
+          });
+        }
         return;
       }
-      toast.success(`Sent ${r.amount_whole.toLocaleString()} RRTT — ${r.tx_signature.slice(0, 12)}…`);
+      setWithdrawNotice({
+        tx_signature: r.tx_signature,
+        amount_whole: r.amount_whole,
+        destination: r.destination,
+      });
+      toast.success(`Sent ${r.amount_whole.toLocaleString()} RRTT to your payout address.`, {
+        description: 'Confirmation and Solscan link stay on this page below.',
+        duration: 10_000,
+      });
       setWithdrawAmtWhole('');
       await loadAccount(true);
     } finally {
@@ -990,6 +1046,268 @@ export function AccountPageClient() {
 
           <Card className="border-border bg-ink-800/40">
             <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Hosted wallet activity</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                On-chain moves for your hosted reward wallet: rewards paid in, and RRTT you cashed out. Each entry links
+                to Solscan (mainnet).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs">
+              <details className="group text-muted-foreground">
+                <summary className="cursor-pointer text-xs hover:text-foreground [&::-webkit-details-marker]:hidden">
+                  <span className="underline-offset-2 group-open:underline">What this list is</span>
+                </summary>
+                <p className="mt-2 leading-relaxed pl-0.5 border-l-2 border-border/80 pl-3">
+                  Each row is a finished move on Solana — into your hosted wallet or out to you. We show which apps the
+                  rewards came from when we have that detail.
+                </p>
+              </details>
+              {ledgerErr ? (
+                <p className="text-destructive text-xs">{ledgerErr}</p>
+              ) : !ledger || ledger.total === 0 ? (
+                <p className="text-muted-foreground">
+                  No moves yet — they’ll show up here after the first treasury or cash-out transfer.
+                </p>
+              ) : (
+                <>
+                  <p className="text-muted-foreground">
+                    Showing{' '}
+                    <strong className="tabular-nums text-foreground">{ledger.transactions.length}</strong> of{' '}
+                    <strong className="tabular-nums text-foreground">{ledger.total}</strong> entries
+                    {ledger.solana_cluster ? (
+                      <>
+                        {' '}
+                        <span className="opacity-80">({ledger.solana_cluster})</span>
+                      </>
+                    ) : null}
+                    .
+                  </p>
+                  <div className="space-y-3 md:hidden">
+                    {ledger.transactions.map((row) => {
+                      const txUrl = ledgerTxUrl(row, ledger.explorer_tx_base);
+                      const recv = row.recipient_pubkey?.trim();
+                      const recvUrl = recv ? solscanAccountHref(recv) : null;
+                      const att = row.app_snapshot.attributed_to_this_transfer;
+                      const totals = row.app_snapshot.per_app_totals_at_transfer;
+                      return (
+                        <div
+                          key={row.id}
+                          className="rounded-lg border border-border/80 bg-background/40 p-3 space-y-2 text-xs"
+                        >
+                          <div className="flex flex-wrap items-baseline justify-between gap-2 gap-y-1">
+                            <span className="text-muted-foreground">{formatLedgerWhen(row.created_at)}</span>
+                            <span className="tabular-nums font-semibold text-foreground">
+                              {row.direction === 'out' ? '−' : '+'}
+                              {row.units.toLocaleString()} RRTT
+                            </span>
+                          </div>
+                          <p className="font-medium text-foreground leading-snug">{rewardsLedgerKindLabel(row)}</p>
+                          {row.kind === 'treasury_to_custodial' && row.earn_balance_snapshot != null ? (
+                            <p className="text-muted-foreground">
+                              Rewards total at that time:{' '}
+                              <span className="tabular-nums text-foreground">{row.earn_balance_snapshot}</span>
+                            </p>
+                          ) : null}
+                          <div className="flex flex-col gap-1.5 min-w-0">
+                            <span className="text-muted-foreground">Transaction</span>
+                            {txUrl && row.tx_signature ? (
+                              <a
+                                href={txUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 font-mono text-sol-green hover:underline break-all text-[11px]"
+                              >
+                                View on Solscan
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </div>
+                          {row.kind === 'withdrawal_to_personal' && recv ? (
+                            <div className="min-w-0">
+                              <span className="text-muted-foreground">Sent to </span>
+                              <a
+                                href={recvUrl!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-sol-green hover:underline break-all text-[11px]"
+                                title={recv}
+                              >
+                                {shortenPubkey(recv)}
+                              </a>
+                            </div>
+                          ) : null}
+                          {row.notes ? (
+                            <p className="text-muted-foreground">
+                              Note: <span className="text-foreground break-words">{row.notes}</span>
+                            </p>
+                          ) : null}
+                          {att.length ? (
+                            <details className="text-muted-foreground">
+                              <summary className="cursor-pointer hover:text-foreground">From apps ({att.length})</summary>
+                              <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                                {att.map((a) => (
+                                  <li key={a.app_id}>
+                                    <span className="font-mono text-[11px] break-all">{a.app_id}</span>
+                                    <span className="text-muted-foreground"> — </span>
+                                    <span className="tabular-nums">{a.units.toLocaleString()}</span> units
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          ) : (
+                            <p className="text-muted-foreground">No app breakdown for this row</p>
+                          )}
+                          {totals.length ? (
+                            <details className="text-muted-foreground">
+                              <summary className="cursor-pointer hover:text-foreground">Totals per app (at that time)</summary>
+                              <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                                {totals.map((t) => (
+                                  <li key={t.app_id}>
+                                    <span className="font-mono text-[11px] break-all">{t.app_id}</span>
+                                    <span> — </span>
+                                    <span className="tabular-nums">{t.total_units.toLocaleString()}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto rounded-md border border-border/80 -mx-1">
+                    <table className="w-full min-w-[640px] text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-border/80 bg-background/50 text-muted-foreground">
+                          <th className="py-2 px-2 font-medium whitespace-nowrap">When</th>
+                          <th className="py-2 px-2 font-medium">What</th>
+                          <th className="py-2 px-2 font-medium text-right whitespace-nowrap">RRTT</th>
+                          <th className="py-2 px-2 font-medium min-w-[11rem]">From apps</th>
+                          <th className="py-2 px-2 font-medium min-w-[9rem]">Transaction</th>
+                          <th className="py-2 px-2 font-medium min-w-[9rem]">To / note</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ledger.transactions.map((row) => {
+                          const txUrl = ledgerTxUrl(row, ledger.explorer_tx_base);
+                          const recv = row.recipient_pubkey?.trim();
+                          const recvUrl = recv ? solscanAccountHref(recv) : null;
+                          const att = row.app_snapshot.attributed_to_this_transfer;
+                          const totals = row.app_snapshot.per_app_totals_at_transfer;
+                          return (
+                            <tr key={row.id} className="border-b border-border/50 align-top last:border-0">
+                              <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">
+                                {formatLedgerWhen(row.created_at)}
+                              </td>
+                              <td className="py-2 px-2">
+                                <div>{rewardsLedgerKindLabel(row)}</div>
+                                {row.kind === 'treasury_to_custodial' && row.earn_balance_snapshot != null ? (
+                                  <div className="text-muted-foreground mt-0.5">
+                                    Rewards total at that time:{' '}
+                                    <span className="tabular-nums">{row.earn_balance_snapshot}</span>
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="py-2 px-2 text-right tabular-nums font-medium">
+                                {row.direction === 'out' ? '−' : '+'}
+                                {row.units.toLocaleString()}
+                              </td>
+                              <td className="py-2 px-2">
+                                {att.length ? (
+                                  <ul className="list-disc pl-4 space-y-0.5">
+                                    {att.map((a) => (
+                                      <li key={a.app_id}>
+                                        <span className="font-mono text-[11px] break-all">{a.app_id}</span>
+                                        <span className="text-muted-foreground"> — </span>
+                                        <span className="tabular-nums">{a.units.toLocaleString()}</span>
+                                        <span className="text-muted-foreground"> units</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <span className="text-muted-foreground">No app breakdown for this row</span>
+                                )}
+                                {totals.length ? (
+                                  <details className="mt-1.5">
+                                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                                      Totals per app (at that time)
+                                    </summary>
+                                    <ul className="list-disc pl-4 mt-1 space-y-0.5 text-muted-foreground">
+                                      {totals.map((t) => (
+                                        <li key={t.app_id}>
+                                          <span className="font-mono text-[11px] break-all">{t.app_id}</span>
+                                          <span> — </span>
+                                          <span className="tabular-nums">{t.total_units.toLocaleString()}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </details>
+                                ) : null}
+                              </td>
+                              <td className="py-2 px-2 font-mono text-[11px]">
+                                {txUrl && row.tx_signature ? (
+                                  <a
+                                    href={txUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sol-green hover:underline break-all"
+                                    title={row.tx_signature}
+                                  >
+                                    {shortenPubkey(row.tx_signature)}
+                                  </a>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-2">
+                                {row.kind === 'withdrawal_to_personal' && recv ? (
+                                  <div>
+                                    <span className="text-muted-foreground">Sent to: </span>
+                                    <a
+                                      href={recvUrl!}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-mono text-sol-green hover:underline break-all text-[11px]"
+                                      title={recv}
+                                    >
+                                      {shortenPubkey(recv)}
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                                {row.notes ? (
+                                  <div className="mt-1 text-muted-foreground">
+                                    Note: <span className="text-foreground break-words">{row.notes}</span>
+                                  </div>
+                                ) : null}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {ledger.transactions.length < ledger.total ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={ledgerLoadingMore || genBusy}
+                      onClick={() => void onLoadMoreLedger()}
+                    >
+                      {ledgerLoadingMore ? 'Loading…' : 'Load more'}
+                    </Button>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-ink-800/40">
+            <CardHeader className="pb-2">
               <CardTitle className="text-lg">Your own wallet</CardTitle>
               <CardDescription className="text-muted-foreground">
                 The Solana wallet you connect at the top of the site. Link it once so we know payouts go to you.
@@ -1053,175 +1371,6 @@ export function AccountPageClient() {
 
           <Card className="border-border bg-ink-800/40">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Reward history</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                When rewards moved into your hosted wallet or out to an address you chose. Links open on Solscan.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs">
-                    <details className="group text-muted-foreground">
-                      <summary className="cursor-pointer text-xs hover:text-foreground [&::-webkit-details-marker]:hidden">
-                        <span className="underline-offset-2 group-open:underline">What this list is</span>
-                      </summary>
-                      <p className="mt-2 leading-relaxed pl-0.5 border-l-2 border-border/80 pl-3">
-                        Each row is a finished move on Solana — into your hosted wallet or out to you. We show which
-                        apps the rewards came from when we have that detail.
-                      </p>
-                    </details>
-                    {ledgerErr ? (
-                      <p className="text-destructive text-xs">{ledgerErr}</p>
-                    ) : !ledger || ledger.total === 0 ? (
-                      <p className="text-muted-foreground">No moves yet — they’ll show up here after the first transfer.</p>
-                    ) : (
-                      <>
-                        <p className="text-muted-foreground">
-                          Showing{' '}
-                          <strong className="tabular-nums text-foreground">{ledger.transactions.length}</strong> of{' '}
-                          <strong className="tabular-nums text-foreground">{ledger.total}</strong> entries
-                          {ledger.solana_cluster ? (
-                            <>
-                              {' '}
-                              <span className="opacity-80">({ledger.solana_cluster})</span>
-                            </>
-                          ) : null}
-                          .
-                        </p>
-                        <div className="overflow-x-auto rounded-md border border-border/80 -mx-1">
-                          <table className="w-full min-w-[720px] text-left border-collapse">
-                            <thead>
-                              <tr className="border-b border-border/80 bg-background/50 text-muted-foreground">
-                                <th className="py-2 px-2 font-medium whitespace-nowrap">When</th>
-                                <th className="py-2 px-2 font-medium">What</th>
-                                <th className="py-2 px-2 font-medium text-right whitespace-nowrap">RRTT</th>
-                                <th className="py-2 px-2 font-medium min-w-[11rem]">From apps</th>
-                                <th className="py-2 px-2 font-medium min-w-[9rem]">Transaction</th>
-                                <th className="py-2 px-2 font-medium min-w-[9rem]">To / note</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {ledger.transactions.map((row) => {
-                                const txUrl =
-                                  row.tx_signature && ledger.explorer_tx_base
-                                    ? `${ledger.explorer_tx_base}${encodeURIComponent(row.tx_signature)}`
-                                    : null;
-                                const recv = row.recipient_pubkey?.trim();
-                                const recvUrl = recv ? `https://solscan.io/account/${encodeURIComponent(recv)}` : null;
-                                const att = row.app_snapshot.attributed_to_this_transfer;
-                                const totals = row.app_snapshot.per_app_totals_at_transfer;
-                                return (
-                                  <tr key={row.id} className="border-b border-border/50 align-top last:border-0">
-                                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">
-                                      {formatLedgerWhen(row.created_at)}
-                                    </td>
-                                    <td className="py-2 px-2">
-                                      <div>{rewardsLedgerKindLabel(row)}</div>
-                                      {row.kind === 'treasury_to_custodial' &&
-                                      row.earn_balance_snapshot != null ? (
-                                        <div className="text-muted-foreground mt-0.5">
-                                          Rewards total at that time:{' '}
-                                          <span className="tabular-nums">{row.earn_balance_snapshot}</span>
-                                        </div>
-                                      ) : null}
-                                    </td>
-                                    <td className="py-2 px-2 text-right tabular-nums font-medium">
-                                      {row.direction === 'out' ? '−' : '+'}
-                                      {row.units.toLocaleString()}
-                                    </td>
-                                    <td className="py-2 px-2">
-                                      {att.length ? (
-                                        <ul className="list-disc pl-4 space-y-0.5">
-                                          {att.map((a) => (
-                                            <li key={a.app_id}>
-                                              <span className="font-mono text-[11px] break-all">{a.app_id}</span>
-                                              <span className="text-muted-foreground"> — </span>
-                                              <span className="tabular-nums">{a.units.toLocaleString()}</span>
-                                              <span className="text-muted-foreground"> units</span>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      ) : (
-                                        <span className="text-muted-foreground">No app breakdown for this row</span>
-                                      )}
-                                      {totals.length ? (
-                                        <details className="mt-1.5">
-                                          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                                            Totals per app (at that time)
-                                          </summary>
-                                          <ul className="list-disc pl-4 mt-1 space-y-0.5 text-muted-foreground">
-                                            {totals.map((t) => (
-                                              <li key={t.app_id}>
-                                                <span className="font-mono text-[11px] break-all">{t.app_id}</span>
-                                                <span> — </span>
-                                                <span className="tabular-nums">{t.total_units.toLocaleString()}</span>
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        </details>
-                                      ) : null}
-                                    </td>
-                                    <td className="py-2 px-2 font-mono text-[11px]">
-                                      {txUrl && row.tx_signature ? (
-                                        <a
-                                          href={txUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-sol-green hover:underline break-all"
-                                          title={row.tx_signature}
-                                        >
-                                          {shortenPubkey(row.tx_signature)}
-                                        </a>
-                                      ) : (
-                                        <span className="text-muted-foreground">—</span>
-                                      )}
-                                    </td>
-                                    <td className="py-2 px-2">
-                                      {row.kind === 'withdrawal_to_personal' && recv ? (
-                                        <div>
-                                          <span className="text-muted-foreground">Sent to: </span>
-                                          <a
-                                            href={recvUrl!}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="font-mono text-sol-green hover:underline break-all text-[11px]"
-                                            title={recv}
-                                          >
-                                            {shortenPubkey(recv)}
-                                          </a>
-                                        </div>
-                                      ) : (
-                                        <span className="text-muted-foreground">—</span>
-                                      )}
-                                      {row.notes ? (
-                                        <div className="mt-1 text-muted-foreground">
-                                          Note:{' '}
-                                          <span className="text-foreground break-words">{row.notes}</span>
-                                        </div>
-                                      ) : null}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                        {ledger.transactions.length < ledger.total ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={ledgerLoadingMore || genBusy}
-                            onClick={() => void onLoadMoreLedger()}
-                          >
-                            {ledgerLoadingMore ? 'Loading…' : 'Load more'}
-                          </Button>
-                        ) : null}
-                      </>
-                    )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-ink-800/40">
-            <CardHeader className="pb-2">
               <CardTitle className="text-lg">Cash out RRTT</CardTitle>
               <CardDescription className="text-muted-foreground">
                 Send RRTT to your linked wallet, or to another Solana address you save below. We pay the network fee for
@@ -1229,6 +1378,60 @@ export function AccountPageClient() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              {withdrawNotice ? (
+                <div
+                  role="status"
+                  className={cn(
+                    'rounded-lg border p-3 space-y-2 text-sm',
+                    withdrawNotice.error
+                      ? 'border-amber-500/45 bg-amber-500/10 text-amber-50'
+                      : 'border-sol-green/35 bg-sol-green/10 text-foreground',
+                  )}
+                >
+                  {withdrawNotice.error ? (
+                    <>
+                      <p className="font-medium text-amber-100">Something went wrong after signing</p>
+                      <p className="text-xs leading-relaxed opacity-95">{withdrawNotice.error}</p>
+                      <p className="text-xs leading-relaxed text-amber-100/90">
+                        If the transfer actually landed on-chain, use this signature when you contact support. It may
+                        still appear under <strong className="font-medium">Hosted wallet activity</strong> after a
+                        refresh.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium text-foreground">Withdrawal confirmed on Solana</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Sent{' '}
+                        <strong className="tabular-nums text-foreground">
+                          {withdrawNotice.amount_whole.toLocaleString()} RRTT
+                        </strong>
+                        {withdrawNotice.destination ? (
+                          <>
+                            {' '}
+                            to{' '}
+                            <span className="font-mono text-foreground break-all">{withdrawNotice.destination}</span>
+                          </>
+                        ) : null}
+                        . It will show in <strong className="text-foreground font-medium">Hosted wallet activity</strong>{' '}
+                        on this page after the list refreshes.
+                      </p>
+                    </>
+                  )}
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between pt-1">
+                    <SolscanTxLink signature={withdrawNotice.tx_signature} className="text-sm font-medium" />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 shrink-0 text-muted-foreground hover:text-foreground self-start sm:self-center"
+                      onClick={() => setWithdrawNotice(null)}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
               <div className="space-y-2 max-w-lg">
                 <Input
                   value={withdrawDraft}
