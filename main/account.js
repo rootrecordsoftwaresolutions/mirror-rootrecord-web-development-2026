@@ -322,6 +322,8 @@
         title: "RootRecord Business Manager",
         platform: "Android",
         href: "/rootrecord-business-manager.html",
+        playTestUrl:
+          "https://play.google.com/apps/testing/com.rootrecord.businessmanager",
         note:
           "Cloud business workspace on api.rootrecord.info is tied to this account.",
         last_connected_at:
@@ -344,6 +346,8 @@
         title: "Root Record Weather Manager",
         platform: "Android",
         href: "/rootrecord-weather-manager.html",
+        playTestUrl:
+          "https://play.google.com/apps/testing/com.rootrecord.weathermanager",
         note:
           "A mobile notification registration exists for this account.",
         last_connected_at:
@@ -362,7 +366,8 @@
     if (rows.length === 0) {
       box.innerHTML =
         '<p class="note" style="margin:0">No linked apps yet. When you sign in inside a RootRecord app and we see saved data, notifications, or synced weather for this account, it will appear here.</p>' +
-        '<p style="margin-top:1rem"><a class="btn btn-secondary" href="/products.html">Browse products</a></p>';
+        '<p style="margin-top:1rem"><a class="btn btn-secondary" href="/products.html">Browse products</a></p>' +
+        '<p class="note" style="margin-top:1rem">Android closed testing: <a href="https://play.google.com/apps/testing/com.rootrecord.businessmanager" target="_blank" rel="noopener">Business Manager</a> &middot; <a href="https://play.google.com/apps/testing/com.rootrecord.weathermanager" target="_blank" rel="noopener">Weather Manager</a></p>';
       return;
     }
     box.innerHTML =
@@ -375,6 +380,15 @@
               '">' +
               escapeHtml(lc.label) +
               "</time></p>"
+            : "";
+          const playTestUrl =
+            typeof r.playTestUrl === "string" && r.playTestUrl.trim()
+              ? r.playTestUrl.trim()
+              : "";
+          const playBtn = playTestUrl
+            ? '<a class="btn btn-secondary" href="' +
+              escapeHtml(playTestUrl) +
+              '" target="_blank" rel="noopener">Google Play testing</a>'
             : "";
           return (
             '<article class="my-apps-card" data-testid="my-app-card">' +
@@ -389,7 +403,9 @@
             lastHtml +
             '<p class="my-apps-card-actions"><a class="btn btn-secondary" href="' +
             escapeHtml(r.href) +
-            '">Product page</a></p></article>'
+            '">Product page</a>' +
+            (playBtn ? " " + playBtn : "") +
+            "</p></article>"
           );
         })
         .join("") +
