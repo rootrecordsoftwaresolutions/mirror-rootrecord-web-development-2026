@@ -44,6 +44,14 @@ import { fetchCustodialMainnetBalances, type CustodialChainBalances } from '@/li
 
 type Phase = 'loading' | 'forms' | 'account';
 
+const ACCOUNT_LOADING_LINES = [
+  'Loading settings…',
+  'Verifying ownership…',
+  'Fetching subscription and plan…',
+  'Syncing rewards balance…',
+  'Loading ledger snapshot…',
+];
+
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) {
@@ -245,6 +253,7 @@ function DetailRow({ k, children }: { k: string; children: React.ReactNode }) {
 export function AccountPageClient() {
   const { publicKey, signMessage, connected } = useWallet();
   const [phase, setPhase] = useState<Phase>('loading');
+  const [loadingLineIdx, setLoadingLineIdx] = useState(0);
   const [status, setStatus] = useState<{ msg: string; kind: 'ok' | 'warn' | 'err' | '' }>({ msg: '', kind: '' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -277,14 +286,20 @@ export function AccountPageClient() {
     }
     if (!soft) {
       setPhase('loading');
+      setLoadingLineIdx(0);
       applyStatus('', '');
     }
-    const r = await fetchPortalMe(token);
+    const [r, e, lg] = await Promise.all([
+      fetchPortalMe(token),
+      fetchEarnSummary(token),
+      fetchRewardsLedger(token, { limit: 25, offset: 0 }),
+    ]);
     if (r.ok === false && r.status === 401) {
       clearPortalSession();
       syncPortalLifetimeFromMe(null);
       setLedger(null);
       setLedgerErr('');
+      setEarn(null);
       applyStatus('Your session ended. Please sign in again.', 'warn');
       setPhase('forms');
       return;
@@ -303,10 +318,6 @@ export function AccountPageClient() {
       return;
     }
     setLedgerErr('');
-    const [e, lg] = await Promise.all([
-      fetchEarnSummary(token),
-      fetchRewardsLedger(token, { limit: 25, offset: 0 }),
-    ]);
     if (lg.ok) setLedger(lg.data);
     else {
       setLedger(null);
@@ -323,6 +334,14 @@ export function AccountPageClient() {
   useEffect(() => {
     void loadAccount();
   }, [loadAccount]);
+
+  useEffect(() => {
+    if (phase !== 'loading') return;
+    const id = window.setInterval(() => {
+      setLoadingLineIdx((i) => (i + 1) % ACCOUNT_LOADING_LINES.length);
+    }, 2200);
+    return () => window.clearInterval(id);
+  }, [phase]);
 
   /** Refresh portal + earn + ledger while signed in (API pulls mainnet and updates D1 cache server-side). */
   useEffect(() => {
@@ -727,7 +746,21 @@ export function AccountPageClient() {
 
       {phase === 'loading' && hasApi ? (
         <Card className="border-border bg-ink-800/40">
-          <CardContent className="pt-6 text-sm text-muted-foreground">Loading…</CardContent>
+          <CardContent className="py-10 sm:py-12">
+            <div className="flex flex-col items-center justify-center gap-5 text-center" aria-busy="true" aria-live="polite">
+              <div
+                className="h-9 w-9 rounded-full border-2 border-sol-green/25 border-t-sol-green animate-spin"
+                aria-hidden
+              />
+              <p
+                key={loadingLineIdx}
+                className="text-sm text-muted-foreground max-w-md animate-in fade-in duration-300"
+              >
+                {ACCOUNT_LOADING_LINES[loadingLineIdx]}
+              </p>
+              <p className="text-xs text-muted-foreground/80">This usually takes only a moment.</p>
+            </div>
+          </CardContent>
         </Card>
       ) : null}
 
