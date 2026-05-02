@@ -34,6 +34,7 @@ import { handleSolanaAppActivityRoute } from "./solana-app-activity";
 import { handleSolanaLinkedWalletRoute } from "./solana-linked-wallet";
 import { handleCustodialRrttWithdrawV1 } from "./custodial-rrtt-withdraw";
 import { readRecentHttpErrorEvents } from "./observability";
+import { handleMobileVersionPolicy } from "./mobile-client-version";
 
 import {
 
@@ -154,6 +155,13 @@ export interface Env {
    * touch, account `updated_at`, or `created_at`. Default 365. Min 30.
    */
   ABANDONED_ACCOUNT_INACTIVITY_DAYS?: string;
+
+  /** Semver floor for Weather Android (`GET /api/mobile/version-policy`). */
+  MIN_APP_VERSION_WEATHER?: string;
+  /** Semver floor for Business Manager Android. */
+  MIN_APP_VERSION_BM?: string;
+  PLAY_STORE_URL_WEATHER?: string;
+  PLAY_STORE_URL_BM?: string;
 
 }
 
@@ -636,6 +644,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       200
     );
 
+  }
+
+  if (method === "GET" && sub === "/mobile/version-policy") {
+    return handleMobileVersionPolicy(request, env);
   }
 
   if (method === "POST" && sub === "/auth/login") {
