@@ -38,8 +38,6 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 # RRTT SPL (Solana mainnet): custodial balance cache + treasury→custodial cron (`RRTT_TREASURY_SECRET_KEY_B58` = secret only).
 RRTT_MINT_BASE58 = "6KfGKe13ASrV5WHvChbapQXxxEFRNqwpwrdEVsX6RQMT"
 RRTT_DECIMALS = "9"
-# Treasury→custodial RRTT per cron: 1 = full pending gap each run (use a lower value only for a one-off partial wave).
-RRTT_TREASURY_TRANSFER_FRACTION = "1"
 
 # Internal custodial wallet encryption (AES-256-GCM). deploy.ps1 uploads INTERNAL_WALLET_ENC_KEY_B64
 # (from credentials.env, or .deploy-internal-wallet-key, or auto-generated like JWT_SECRET).

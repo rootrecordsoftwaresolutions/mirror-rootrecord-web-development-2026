@@ -671,20 +671,11 @@ export async function tryFundCustodialMinimumSolAfterCreate(
   }
 }
 
-/** Fraction of pending earn→custodial RRTT to move each cron (1 = full gap). */
-function rrttTreasuryTransferFraction(env: { RRTT_TREASURY_TRANSFER_FRACTION?: string }): number {
-  const n = Number(String(env.RRTT_TREASURY_TRANSFER_FRACTION ?? "1").trim());
-  if (!Number.isFinite(n) || n <= 0) return 1;
-  return Math.min(1, n);
-}
-
 export type RrttCronEnv = InternalWalletEnv & {
   SOLANA_RPC_URL?: string;
   RRTT_MINT_BASE58?: string;
   RRTT_DECIMALS?: string;
   RRTT_TREASURY_SECRET_KEY_B58?: string;
-  /** "1" = full pending per run; "0.5" = half (floored, at least 1 whole unit when pending &gt; 0). */
-  RRTT_TREASURY_TRANSFER_FRACTION?: string;
 };
 
 export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void> {
@@ -709,8 +700,7 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
   const canTransfer = Boolean(treasury);
   const mint = new PublicKey(mintStr);
   const connection = new Connection(rpcUrl, "confirmed");
-  const transferFrac = rrttTreasuryTransferFraction(env);
-  console.log("rrtt custodial cron start", { transferFrac, rpcUrl: rpcUrl.slice(0, 48) });
+  console.log("rrtt custodial cron start", { rpcUrl: rpcUrl.slice(0, 48) });
 
   const rows = await env.DB
     .prepare(
@@ -733,9 +723,8 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
     const earnBal = Math.max(0, Math.floor(Number(r.earn_balance) || 0));
     const sent = Math.max(0, Math.floor(Number(r.sent) || 0));
     const pending = Math.max(0, earnBal - sent);
-    let transferUnits = Math.floor(pending * transferFrac);
-    if (pending > 0 && transferUnits < 1) transferUnits = 1;
-    if (transferUnits > pending) transferUnits = pending;
+    /** Full earn→custodial gap each run (no partial/fraction transfers). */
+    const transferUnits = pending;
     const custodialPk = new PublicKey(r.custodial_b58);
     try {
       const custodialAta = getAssociatedTokenAddressSync(mint, custodialPk, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
