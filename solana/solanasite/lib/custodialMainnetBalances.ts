@@ -152,27 +152,28 @@ export async function fetchCustodialMainnetBalances(
   decimals: number,
 ): Promise<CustodialChainBalances> {
   const dec = Math.min(9, Math.max(0, Math.floor(decimals) || 0));
-  let last: CustodialChainBalances = {
-    rrttWhole: null,
-    lamports: null,
-    solOk: false,
-    tokenOk: false,
-    ok: false,
-  };
+  let rrttWhole: number | null = null;
+  let lamports: number | null = null;
+  let solOk = false;
+  let tokenOk = false;
   for (const url of rpcCandidates()) {
     try {
       const r = await readOnce(url, custodialPubkeyB58.trim(), mintB58.trim(), dec);
-      last = {
-        rrttWhole: r.rrtt,
-        lamports: r.solOk ? r.lamports : null,
-        solOk: r.solOk,
-        tokenOk: r.tokenOk,
-        ok: r.solOk || r.tokenOk,
-      };
-      if (last.ok) return last;
+      // Do not return on first partial success: one endpoint may serve SPL reads but
+      // rate-limit or drop getBalance; another may return SOL. Merge across candidates.
+      if (r.solOk && !solOk) {
+        solOk = true;
+        lamports = r.lamports;
+      }
+      if (r.tokenOk && !tokenOk) {
+        tokenOk = true;
+        rrttWhole = r.rrtt;
+      }
+      if (solOk && tokenOk) break;
     } catch {
       /* next RPC */
     }
   }
-  return last;
+  const ok = solOk || tokenOk;
+  return { rrttWhole, lamports, solOk, tokenOk, ok };
 }

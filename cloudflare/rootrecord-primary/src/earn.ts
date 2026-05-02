@@ -182,16 +182,11 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
         custodial_units_sent = sent;
         const onchainNum =
           onchain != null && Number.isFinite(Number(onchain)) ? Math.max(0, Math.floor(Number(onchain))) : -1;
-        /** Pending = ledger total not yet “in wallet” on Solana (uses max of ledger-sent vs on-chain SPL so counters can’t lag). */
+        /** Pending = ledger total not yet reflected as SPL in the custodial wallet (max of ledger “sent” vs on-chain). */
         custodial_pending_units = Math.max(0, balance - Math.max(sent, onchainNum >= 0 ? onchainNum : 0));
         const availLedger = Math.max(0, sent - withdrawn);
-        if (onchainNum >= 0) {
-          const ledgerCap = Math.max(0, sent - withdrawn);
-          const boostedCap = sent === 0 && onchainNum > 0 ? Math.max(ledgerCap, onchainNum) : ledgerCap;
-          custodial_available_withdraw_units = Math.min(onchainNum, Math.max(ledgerCap, boostedCap));
-        } else {
-          custodial_available_withdraw_units = availLedger;
-        }
+        /** Spendable RRTT = SPL balance in custodial wallet for this mint (withdraw UX matches wallet). */
+        custodial_available_withdraw_units = onchainNum >= 0 ? onchainNum : availLedger;
         custodial_onchain_rrtt = onchain;
         custodial_sum_ledger_and_wallet_units = balance + (onchainNum >= 0 ? onchainNum : 0);
       }

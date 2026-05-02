@@ -93,11 +93,27 @@ function custodialPubFromMe(me: PortalMeData | null): string {
   return typeof v === 'string' && v.trim() ? v.trim() : '';
 }
 
-function solCachedLamports(me: PortalMeData | null): number | null {
+/** Non-negative lamports from /v1/me (number, decimal string, or bigint-safe string). */
+function solCachedLamportsBigint(me: PortalMeData | null): bigint | null {
   const v = me?.custodial_sol_lamports_cached;
   if (v == null) return null;
+  if (typeof v === 'bigint') return v < 0n ? 0n : v;
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (!t) return null;
+    if (/^\d+$/.test(t)) {
+      try {
+        return BigInt(t);
+      } catch {
+        return null;
+      }
+    }
+    const n = Number(t);
+    return Number.isFinite(n) ? BigInt(Math.max(0, Math.floor(n))) : null;
+  }
   const n = Number(v);
-  return Number.isFinite(n) ? Math.floor(n) : null;
+  if (!Number.isFinite(n)) return null;
+  return BigInt(Math.max(0, Math.floor(n)));
 }
 
 function rewardsLedgerKindLabel(row: RewardsLedgerTransaction): string {
@@ -110,6 +126,17 @@ function shortenPubkey(s: string): string {
   const t = s.trim();
   if (t.length <= 16) return t;
   return `${t.slice(0, 8)}…${t.slice(-6)}`;
+}
+
+/** Exact SOL string from integer lamports (no float math; trims trailing fractional zeros only). */
+function formatLamportsAsSolExact(lamports: bigint | number): string {
+  const lam = typeof lamports === 'bigint' ? (lamports < 0n ? 0n : lamports) : BigInt(Math.max(0, Math.floor(Number(lamports) || 0)));
+  const SOL = 1_000_000_000n;
+  const whole = lam / SOL;
+  let frac = (lam % SOL).toString().padStart(9, '0');
+  frac = frac.replace(/0+$/, '');
+  if (!frac) return `${whole.toString()} SOL`;
+  return `${whole.toString()}.${frac} SOL`;
 }
 
 const SOLSCAN_ACCOUNT_BASE = 'https://solscan.io/account/';
@@ -183,10 +210,10 @@ function RewardsProgramNote({ earn }: { earn: EarnSummary | null }) {
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground leading-relaxed">
-        <span className="text-foreground font-medium">How to read this:</span> the earn ledger holds your credited
-        rewards; &ldquo;not yet in custodial wallet&rdquo; is what still has to show up as SPL on your custodial
-        address. Whatever is already in the custodial wallet is what you can treat as on-chain balance; withdraw uses
-        the smaller of that and what the ledger allows. {learn}
+        <span className="text-foreground font-medium">How to read this:</span> the earn ledger is your credited
+        rewards total. &ldquo;Not yet in custodial wallet&rdquo; is what has not yet shown up as SPL on your custodial
+        address. <span className="text-foreground font-medium">RRTT in the custodial wallet is available to withdraw</span>{' '}
+        (same number as &ldquo;Available to withdraw&rdquo;). Total = ledger + in-wallet SPL. {learn}
       </p>
     </div>
   );
@@ -571,22 +598,26 @@ export function AccountPageClient() {
   const connectedPk = publicKey?.toBase58() ?? '';
   const linkedMatchesConnected = Boolean(linkedPk && connectedPk && linkedPk === connectedPk);
   const custodialPk = custodialPubFromMe(me);
-  const solLamportsApi = solCachedLamports(me);
-  const solLamports =
-    chainBal?.solOk === true ? (chainBal.lamports ?? 0) : solLamportsApi != null ? solLamportsApi : null;
-  const solSol = solLamports != null ? solLamports / 1e9 : null;
+  const solLamportsApi = solCachedLamportsBigint(me);
+  const solLamportsChain =
+    chainBal?.solOk === true && chainBal.lamports != null
+      ? BigInt(Math.max(0, Math.floor(chainBal.lamports)))
+      : null;
+  /** Browser mainnet read wins; otherwise exact lamports from API cache. */
+  const solLamportsDisplay = solLamportsChain ?? solLamportsApi;
   const onchainRrttApi = earnOptionalInt(earn, 'custodial_onchain_rrtt');
-  const onchainRrtt = chainBal?.tokenOk === true ? (chainBal.rrttWhole ?? 0) : onchainRrttApi;
+  /** Whole RRTT units Solana shows in custodial wallet (browser read wins over API when present). */
+  const rrttInWallet =
+    chainBal?.tokenOk === true ? (chainBal.rrttWhole ?? 0) : (onchainRrttApi ?? 0);
   const totalEarnUnits =
     earn != null && Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : null;
-  const sumLedgerWallet =
-    earn != null && 'custodial_sum_ledger_and_wallet_units' in earn
-      ? numEarn(earn, 'custodial_sum_ledger_and_wallet_units')
-      : totalEarnUnits != null
-        ? totalEarnUnits + (onchainRrtt ?? 0)
-        : null;
-  const pendingUnits = earn != null ? numEarn(earn, 'custodial_pending_units') : null;
-  const availWithdraw = earn != null ? numEarn(earn, 'custodial_available_withdraw_units') : null;
+  /** Ledger lifetime + SPL in custodial (135,800 + 1 = 135,801). Always from displayed wallet balance. */
+  const sumLedgerWallet = totalEarnUnits != null ? totalEarnUnits + rrttInWallet : null;
+  const sentUnits = earn != null ? numEarn(earn, 'custodial_units_sent') : 0;
+  const pendingUnits =
+    totalEarnUnits != null ? Math.max(0, totalEarnUnits - Math.max(sentUnits, rrttInWallet)) : null;
+  /** RRTT in the custodial SPL account is what the user can withdraw from that account. */
+  const availWithdraw = rrttInWallet;
   const savedWithdrawDest =
     me && typeof me.withdraw_dest_pubkey === 'string' ? me.withdraw_dest_pubkey.trim() : '';
 
@@ -736,9 +767,9 @@ export function AccountPageClient() {
                     )
                   }
                   hint={
-                    totalEarnUnits != null && onchainRrtt != null
-                      ? `Earn ledger ${totalEarnUnits.toLocaleString()} + SPL in custodial wallet ${(onchainRrtt ?? 0).toLocaleString()} (same mint).`
-                      : 'Lifetime earn ledger plus RRTT SPL already in your custodial wallet.'
+                    totalEarnUnits != null
+                      ? `Earn ledger ${totalEarnUnits.toLocaleString()} + custodial SPL ${rrttInWallet.toLocaleString()} = ${sumLedgerWallet?.toLocaleString() ?? '—'} total units.`
+                      : 'Lifetime earn ledger plus RRTT SPL in your custodial wallet.'
                   }
                 />
                 <BalanceStat
@@ -767,32 +798,30 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="RRTT sitting in your custodial SPL account that you are allowed to move out (ledger + on-chain rules)."
+                  hint="Same as “RRTT in custodial wallet”: SPL already at your custodial address is what you can move out in a withdrawal."
                 />
                 <BalanceStat
                   label="RRTT in custodial wallet"
                   value={
-                    onchainRrtt != null ? (
-                      <>
-                        {onchainRrtt.toLocaleString()}{' '}
-                        <span className="text-muted-foreground font-medium text-sm">RRTT</span>
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )
+                    <>
+                      {rrttInWallet.toLocaleString()}{' '}
+                      <span className="text-muted-foreground font-medium text-sm">RRTT</span>
+                    </>
                   }
                   hint="What Solana shows for this mint at your custodial address (API + browser mainnet read)."
                 />
                 <BalanceStat
                   label="SOL in custodial wallet"
                   value={
-                    solSol != null ? (
-                      <>{solSol.toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL</>
+                    solLamportsDisplay != null ? (
+                      <span className="font-mono text-sm tabular-nums">
+                        {formatLamportsAsSolExact(solLamportsDisplay)}
+                      </span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Native SOL on the custodial pubkey (rent + fees). Reads from the API and from this browser’s RPC when possible; if you see 0, Solscan for that address is the ground truth."
+                  hint="Native SOL from integer lamports (browser RPC when available, else API cache). Shown as exact decimal SOL, not rounded float."
                 />
               </div>
               <RewardsProgramNote earn={earn} />
