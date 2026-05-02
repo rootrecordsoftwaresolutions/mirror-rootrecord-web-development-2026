@@ -625,13 +625,11 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
 
   let custodial_sol_lamports_cached: number | null = null;
 
+  let custodial_balances_rpc_ok = false;
+
   try {
 
-    await refreshCustodialOnchainCacheFromRpc(env, sess.accountId).catch(() => {
-
-      /* optional RPC */
-
-    });
+    const snap = await refreshCustodialOnchainCacheFromRpc(env, sess.accountId).catch(() => null);
 
     const cw = await env.DB
 
@@ -655,7 +653,17 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
 
     if (cw?.wdp) withdraw_dest_pubkey = cw.wdp;
 
-    if (cw?.solc != null && Number.isFinite(Number(cw.solc))) custodial_sol_lamports_cached = Math.floor(Number(cw.solc));
+    if (snap != null) {
+
+      custodial_sol_lamports_cached = Math.max(0, Math.floor(Number(snap.sol_balance_lamports_cached) || 0));
+
+      custodial_balances_rpc_ok = snap.rpc_ok;
+
+    } else if (cw?.solc != null && Number.isFinite(Number(cw.solc))) {
+
+      custodial_sol_lamports_cached = Math.floor(Number(cw.solc));
+
+    }
 
   } catch {
 
@@ -700,6 +708,8 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
       withdraw_dest_pubkey,
 
       custodial_sol_lamports_cached,
+
+      custodial_balances_rpc_ok,
 
       apps,
 

@@ -14,8 +14,8 @@ export type CustodialCacheRpcEnv = {
   RRTT_DECIMALS?: string;
 };
 
-/** Skip RPC if D1 cache was written this recently (avoids duplicate calls when /v1/me + /earn/summary load together). */
-const CACHE_FRESH_MS = 12_000;
+/** Skip writing D1 if `cache_updated_at` is this fresh (reads still hit RPC every request). */
+const D1_WRITE_MIN_INTERVAL_MS = 12_000;
 
 function isLikelyInfraRpcError(e: unknown): boolean {
   const s = e instanceof Error ? e.message : String(e);
@@ -67,7 +67,6 @@ async function sumMintRawForOwner(
       }
     } catch (e) {
       if (isLikelyInfraRpcError(e)) infraFailures += 1;
-      /* try next program; malformed responses are ignored */
     }
   }
   if (!anyRpcSuccess && infraFailures > 0) return { totalRaw: 0n, ok: false };
@@ -112,15 +111,63 @@ function rawToWholeUnits(totalRaw: bigint, decimals: number): number {
   return Math.max(0, Number(whole));
 }
 
+export type CustodialCacheRefreshResult = {
+  /** Best value for API/UI: live RPC when that leg succeeded, else previous D1. */
+  custodial_rrtt_onchain: number | null;
+  sol_balance_lamports_cached: number;
+  /** True if at least one of SOL or RRTT was read successfully from RPC this call. */
+  rpc_ok: boolean;
+  /** True if D1 row was updated from RPC. */
+  refreshed: boolean;
+};
+
+async function readLiveFromRpc(
+  env: CustodialCacheRpcEnv,
+  mintStr: string,
+  pkStr: string,
+): Promise<{
+  rrtt: number | null;
+  sol: number;
+  solOk: boolean;
+  tokenOk: boolean;
+}> {
+  const decimals = envDecimals(env);
+  const rpcUrl = String(env.SOLANA_RPC_URL || "").trim() || "https://api.mainnet-beta.solana.com";
+  const connection = new Connection(rpcUrl, "confirmed");
+  const mint = new PublicKey(mintStr);
+  const custodialPk = new PublicKey(pkStr);
+
+  let sol = 0;
+  let solOk = false;
+  try {
+    sol = await connection.getBalance(custodialPk, "confirmed");
+    solOk = true;
+  } catch (e) {
+    if (!isLikelyInfraRpcError(e)) throw e;
+  }
+
+  let rrtt: number | null = null;
+  const scan = await sumMintRawForOwner(connection, mint, custodialPk);
+  let tokenOk = scan.ok;
+  if (tokenOk) {
+    rrtt = rawToWholeUnits(scan.totalRaw, decimals);
+  } else {
+    const fb = await tokenBalanceViaAta(connection, mint, custodialPk, decimals);
+    tokenOk = fb.ok;
+    if (fb.ok && fb.whole != null) rrtt = fb.whole;
+  }
+
+  return { rrtt, sol, solOk, tokenOk };
+}
+
 /**
- * Reads custodial SPL + native SOL from mainnet RPC and writes `rr_earn_custodial_state` cache columns.
- * No-op when mint is unset or wallet row is missing. Throttled when `cache_updated_at` is very fresh.
- * Preserves existing D1 values when RPC fails (rate limits) so we do not zero the cache on errors.
+ * Every call: reads mainnet RPC for custodial SOL + RRTT mint balance (direct Solana JSON-RPC).
+ * Throttles only **writes** to D1 (`cache_updated_at` / cache columns) so `/v1/me` + `/earn/summary` always get fresh numbers for the response.
  */
 export async function refreshCustodialOnchainCacheFromRpc(
   env: CustodialCacheRpcEnv,
   accountId: string,
-): Promise<{ custodial_rrtt_onchain: number | null; sol_balance_lamports_cached: number; refreshed: boolean } | null> {
+): Promise<CustodialCacheRefreshResult | null> {
   const mintStr = String(env.RRTT_MINT_BASE58 || "").trim();
   if (!mintStr) return null;
   const aid = String(accountId || "").trim();
@@ -133,93 +180,65 @@ export async function refreshCustodialOnchainCacheFromRpc(
   const pkStr = String(row?.pubkey || "").trim();
   if (!pkStr) return null;
 
-  const staleRow = await env.DB
-    .prepare("SELECT cache_updated_at FROM rr_earn_custodial_state WHERE account_id = ?")
-    .bind(aid)
-    .first<{ cache_updated_at: string | null }>();
-  const ts = staleRow?.cache_updated_at ? Date.parse(String(staleRow.cache_updated_at)) : NaN;
-  if (Number.isFinite(ts) && Date.now() - ts < CACHE_FRESH_MS) {
-    const cur = await env.DB
-      .prepare(
-        "SELECT custodial_rrtt_onchain, sol_balance_lamports_cached FROM rr_earn_custodial_state WHERE account_id = ?",
-      )
-      .bind(aid)
-      .first<{ custodial_rrtt_onchain: number | null; sol_balance_lamports_cached: number | null }>();
-    return {
-      custodial_rrtt_onchain:
-        cur?.custodial_rrtt_onchain != null ? Math.max(0, Math.floor(Number(cur.custodial_rrtt_onchain) || 0)) : null,
-      sol_balance_lamports_cached: Math.max(0, Math.floor(Number(cur?.sol_balance_lamports_cached) || 0)),
-      refreshed: false,
-    };
-  }
-
-  const decimals = envDecimals(env);
-  const rpcUrl = String(env.SOLANA_RPC_URL || "").trim() || "https://api.mainnet-beta.solana.com";
-  const connection = new Connection(rpcUrl, "confirmed");
-  const mint = new PublicKey(mintStr);
-  const custodialPk = new PublicKey(pkStr);
-
   const prev = await env.DB
     .prepare(
-      "SELECT custodial_rrtt_onchain, sol_balance_lamports_cached FROM rr_earn_custodial_state WHERE account_id = ?",
+      "SELECT custodial_rrtt_onchain, sol_balance_lamports_cached, cache_updated_at FROM rr_earn_custodial_state WHERE account_id = ?",
     )
     .bind(aid)
-    .first<{ custodial_rrtt_onchain: number | null; sol_balance_lamports_cached: number | null }>();
+    .first<{ custodial_rrtt_onchain: number | null; sol_balance_lamports_cached: number | null; cache_updated_at: string | null }>();
 
-  let nextOnchain: number | null =
+  const prevRrtt =
     prev?.custodial_rrtt_onchain != null ? Math.max(0, Math.floor(Number(prev.custodial_rrtt_onchain) || 0)) : null;
-  let nextSol = prev?.sol_balance_lamports_cached != null ? Math.max(0, Math.floor(Number(prev.sol_balance_lamports_cached) || 0)) : 0;
+  const prevSol = prev?.sol_balance_lamports_cached != null ? Math.max(0, Math.floor(Number(prev.sol_balance_lamports_cached) || 0)) : 0;
 
-  let solOk = false;
-  try {
-    nextSol = await connection.getBalance(custodialPk, "confirmed");
-    solOk = true;
-  } catch (e) {
-    if (!isLikelyInfraRpcError(e)) throw e;
-    /* keep nextSol from D1 */
-  }
+  const live = await readLiveFromRpc(env, mintStr, pkStr);
+  const rpc_ok = live.solOk || live.tokenOk;
 
-  const scan = await sumMintRawForOwner(connection, mint, custodialPk);
-  let tokenOk = scan.ok;
-  if (tokenOk) {
-    nextOnchain = rawToWholeUnits(scan.totalRaw, decimals);
-  } else {
-    const fb = await tokenBalanceViaAta(connection, mint, custodialPk, decimals);
-    tokenOk = fb.ok;
-    if (fb.ok && fb.whole != null) {
-      nextOnchain = fb.whole;
-    }
-  }
+  const rrttOut = live.tokenOk ? live.rrtt : prevRrtt;
+  const solOut = live.solOk ? live.sol : prevSol;
 
-  const nowIso = new Date().toISOString();
-  await env.DB.prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)").bind(aid).run();
+  const ts = prev?.cache_updated_at ? Date.parse(String(prev.cache_updated_at)) : NaN;
+  const skipD1Write = Number.isFinite(ts) && Date.now() - ts < D1_WRITE_MIN_INTERVAL_MS;
 
-  if (!solOk && !tokenOk) {
+  if (!live.solOk && !live.tokenOk) {
     return {
-      custodial_rrtt_onchain: nextOnchain,
-      sol_balance_lamports_cached: nextSol,
+      custodial_rrtt_onchain: rrttOut,
+      sol_balance_lamports_cached: solOut,
+      rpc_ok: false,
       refreshed: false,
     };
   }
+
+  if (skipD1Write) {
+    return {
+      custodial_rrtt_onchain: rrttOut,
+      sol_balance_lamports_cached: solOut,
+      rpc_ok,
+      refreshed: false,
+    };
+  }
+
+  const nextOnchain = live.tokenOk ? live.rrtt : prevRrtt;
+  const nextSol = live.solOk ? live.sol : prevSol;
+  const nowIso = new Date().toISOString();
+  await env.DB.prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)").bind(aid).run();
 
   await env.DB
     .prepare(
       `UPDATE rr_earn_custodial_state SET custodial_rrtt_onchain = ?, sol_balance_lamports_cached = ?, cache_updated_at = ? WHERE account_id = ?`,
     )
-    .bind(tokenOk ? nextOnchain : prev?.custodial_rrtt_onchain ?? nextOnchain, solOk ? nextSol : prev?.sol_balance_lamports_cached ?? nextSol, nowIso, aid)
+    .bind(
+      live.tokenOk ? nextOnchain : prev?.custodial_rrtt_onchain ?? nextOnchain,
+      live.solOk ? nextSol : prev?.sol_balance_lamports_cached ?? nextSol,
+      nowIso,
+      aid,
+    )
     .run();
 
-  const after = await env.DB
-    .prepare(
-      "SELECT custodial_rrtt_onchain, sol_balance_lamports_cached FROM rr_earn_custodial_state WHERE account_id = ?",
-    )
-    .bind(aid)
-    .first<{ custodial_rrtt_onchain: number | null; sol_balance_lamports_cached: number | null }>();
-
   return {
-    custodial_rrtt_onchain:
-      after?.custodial_rrtt_onchain != null ? Math.max(0, Math.floor(Number(after.custodial_rrtt_onchain) || 0)) : null,
-    sol_balance_lamports_cached: Math.max(0, Math.floor(Number(after?.sol_balance_lamports_cached) || 0)),
+    custodial_rrtt_onchain: rrttOut,
+    sol_balance_lamports_cached: solOut,
+    rpc_ok,
     refreshed: true,
   };
 }

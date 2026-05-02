@@ -156,14 +156,13 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
   let custodial_units_sent = 0;
   let custodial_available_withdraw_units = 0;
   let custodial_onchain_rrtt: number | null = null;
+  let custodial_balances_rpc_ok = false;
   try {
     const auth = request.headers.get("Authorization") || "";
     if (auth.toLowerCase().startsWith("bearer ") && env.JWT_SECRET) {
       const sess = await sessionFromBearer(env, auth.slice(7).trim());
       if (sess) {
-        await refreshCustodialOnchainCacheFromRpc(env as CustodialCacheRpcEnv, sess.accountId).catch(() => {
-          /* RPC/D1 optional */
-        });
+        const snap = await refreshCustodialOnchainCacheFromRpc(env as CustodialCacheRpcEnv, sess.accountId).catch(() => null);
         const csRow = await env.DB
           .prepare(
             `SELECT IFNULL(cs.units_sent_to_custodial, 0) AS sent,
@@ -176,7 +175,9 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
           .first<{ sent: number; withdrawn: number; onchain: number | null }>();
         const sent = Math.max(0, Math.floor(Number(csRow?.sent) || 0));
         const withdrawn = Math.max(0, Math.floor(Number(csRow?.withdrawn) || 0));
-        const onchain = csRow?.onchain != null ? Math.max(0, Math.floor(Number(csRow.onchain) || 0)) : null;
+        const onchainDb = csRow?.onchain != null ? Math.max(0, Math.floor(Number(csRow.onchain) || 0)) : null;
+        const onchain = snap != null ? snap.custodial_rrtt_onchain : onchainDb;
+        if (snap != null) custodial_balances_rpc_ok = snap.rpc_ok;
         custodial_units_sent = sent;
         custodial_pending_units = Math.max(0, balance - sent);
         const availLedger = Math.max(0, sent - withdrawn);
@@ -195,6 +196,7 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
       custodial_units_sent,
       custodial_available_withdraw_units,
       custodial_onchain_rrtt,
+      custodial_balances_rpc_ok,
       total_rewards_units: balance,
       signup_bonus: {
         one_time_across_apps: true,
