@@ -58,6 +58,39 @@ type OtcD1Row = {
   created_at: string;
 };
 
+/** Earn-program treasury → custodial RRTT (Worker `custodial_sweep_rows`). */
+type CustodialSweepRow = {
+  id: string;
+  created_at: string;
+  out_tx_signature: string;
+  custodial_wallet_b58: string;
+  units_whole: number;
+  token_mint: string | null;
+};
+
+type TreasuryHistoryRow =
+  | { kind: 'otc'; otc: OtcD1Row }
+  | { kind: 'custodial_sweep'; sweep: CustodialSweepRow };
+
+function mergeTreasuryHistory(
+  otcRows: OtcD1Row[],
+  sweeps: CustodialSweepRow[],
+  limit: number,
+): TreasuryHistoryRow[] {
+  const merged: TreasuryHistoryRow[] = [
+    ...otcRows.map((otc) => ({ kind: 'otc' as const, otc })),
+    ...sweeps.map((sweep) => ({ kind: 'custodial_sweep' as const, sweep })),
+  ];
+  const tStr = (r: TreasuryHistoryRow) =>
+    r.kind === 'otc' ? r.otc.created_at : r.sweep.created_at;
+  merged.sort((a, b) => {
+    const ta = tStr(a);
+    const tb = tStr(b);
+    return ta < tb ? 1 : ta > tb ? -1 : 0;
+  });
+  return merged.slice(0, Math.max(1, limit));
+}
+
 const OTC_HISTORY_UNAVAILABLE =
   'Treasury transfer history is not available yet. On rootrecord-primary: apply D1 migrations 0012 and 0013, deploy the Worker (includes GET /api/solana-site/ecosystem-otc-history), and set the solanasite server env SOLANA_SITE_LOG_URL to that Worker’s origin so Next can proxy reads.';
 
@@ -94,6 +127,14 @@ function formatTreasuryDepositLine(payWith: string, raw: string | null): string 
     return `${(Number(n) / 1e6).toFixed(6)} USDC deposited into Treasury`;
   }
   return `${raw} deposited into Treasury`;
+}
+
+function custodialSweepHistoryLines(row: CustodialSweepRow): string {
+  const w = shortAddr(row.custodial_wallet_b58, 6, 4);
+  const mint = (row.token_mint || ECOSYSTEM_OTC_TOKEN_MINT).trim();
+  const mintShort = shortAddr(mint, 6, 4);
+  const u = Math.max(0, Math.floor(row.units_whole || 0));
+  return `Treasury → custodial (earn program)\n${u.toLocaleString()} ${ECOSYSTEM_LISTING_SYMBOL} → ${w} · ${mintShort}`;
 }
 
 function otcHistoryOneLine(row: OtcD1Row): string {
@@ -197,7 +238,7 @@ export default function EcosystemPage() {
   const [lastLiquidityErr, setLastLiquidityErr] = useState<string | null>(null);
   const [lastLiquidityNotice, setLastLiquidityNotice] = useState<string | null>(null);
 
-  const [otcHistory, setOtcHistory] = useState<OtcD1Row[]>([]);
+  const [treasuryHistoryRows, setTreasuryHistoryRows] = useState<TreasuryHistoryRow[]>([]);
   const [otcHistoryErr, setOtcHistoryErr] = useState<string | null>(null);
   const [tokenAmount, setTokenAmount] = useState('1000');
   const [payWith, setPayWith] = useState<'SOL' | 'USDC'>('SOL');
@@ -208,18 +249,21 @@ export default function EcosystemPage() {
 
   const loadOtcHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/solana-site/ecosystem-otc-history?limit=80');
+      const lim = 80;
+      const res = await fetch(`/api/solana-site/ecosystem-otc-history?limit=${lim}`);
       const text = await res.text();
       const parsed = parseJsonRecord(text);
       const j = (parsed ?? {}) as {
         ok?: boolean;
         rows?: OtcD1Row[];
+        custodial_sweep_rows?: CustodialSweepRow[];
         detail?: string;
         skipped?: boolean;
       };
       if (res.ok && j.ok && Array.isArray(j.rows)) {
         setOtcHistoryErr(null);
-        setOtcHistory(j.rows);
+        const sweeps = Array.isArray(j.custodial_sweep_rows) ? j.custodial_sweep_rows : [];
+        setTreasuryHistoryRows(mergeTreasuryHistory(j.rows, sweeps, lim));
         return;
       }
       const detailStr = typeof j.detail === 'string' ? j.detail.trim() : '';
@@ -232,10 +276,10 @@ export default function EcosystemPage() {
         msg = OTC_HISTORY_UNAVAILABLE;
       }
       setOtcHistoryErr(msg);
-      setOtcHistory([]);
+      setTreasuryHistoryRows([]);
     } catch {
       setOtcHistoryErr('Network error loading treasury transfer history');
-      setOtcHistory([]);
+      setTreasuryHistoryRows([]);
     }
   }, []);
 
@@ -1019,7 +1063,12 @@ export default function EcosystemPage() {
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle className="text-lg">Treasury Transfer history</CardTitle>
-            <CardDescription>A log of all direct transfers.</CardDescription>
+            <CardDescription>
+              Treasury Transfer Tool rows are one line per buyer payment. Earn-program treasury→custodial RRTT
+              appears as one line per custodial wallet when the Worker records it on-chain. Account balances still
+              follow chain + API reads — if nothing new appears here, the sweep did not confirm or RPC could not
+              refresh yet.
+            </CardDescription>
           </div>
           <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => void loadOtcHistory()}>
             Refresh history
@@ -1032,7 +1081,7 @@ export default function EcosystemPage() {
           {otcHistoryErr === OTC_HISTORY_UNAVAILABLE ? (
             <p className="text-sm text-muted-foreground leading-relaxed">{otcHistoryErr}</p>
           ) : null}
-          {otcHistory.length === 0 ? (
+          {treasuryHistoryRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">No treasury transfers recorded yet.</p>
           ) : (
             <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-md border border-border">
@@ -1041,38 +1090,87 @@ export default function EcosystemPage() {
                   <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="px-3 py-2 font-medium whitespace-nowrap w-[140px]">When</th>
                     <th className="px-3 py-2 font-medium">Transaction</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">Transfer · LP add</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">On-chain links</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {otcHistory.map((row) => {
+                  {treasuryHistoryRows.map((row) => {
                     const sigShort = (s: string) =>
                       s.length > 20 ? `${s.slice(0, 8)}…${s.slice(-6)}` : s;
-                    const checkout = row.payment_tx_signature?.trim();
-                    const lp = row.liquidity_tx?.trim() || '';
-                    const out = row.out_tx?.trim();
-                    const showSeparateOut =
-                      out && checkout && out !== checkout;
+                    if (row.kind === 'custodial_sweep') {
+                      const s = row.sweep;
+                      const out = s.out_tx_signature?.trim();
+                      const key = `sweep-${s.id}`;
+                      return (
+                        <tr key={key} className="border-t border-border/70 align-top">
+                          <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                            {s.created_at}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-foreground/90 leading-snug whitespace-pre-line">
+                            {custodialSweepHistoryLines(s)}
+                          </td>
+                          <td className="px-3 py-2 text-[11px] font-mono whitespace-nowrap">
+                            <div className="flex flex-col gap-1 min-w-[200px]">
+                              <span>
+                                <span className="text-muted-foreground">Treasury→custodial </span>
+                                {out ? (
+                                  <a
+                                    href={`https://solscan.io/tx/${out}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sol-green hover:underline"
+                                  >
+                                    {sigShort(out)}
+                                  </a>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </span>
+                              <span>
+                                <span className="text-muted-foreground">Wallet </span>
+                                <a
+                                  href={solscanAccount(s.custodial_wallet_b58)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sol-green hover:underline"
+                                >
+                                  {shortAddr(s.custodial_wallet_b58, 5, 4)}
+                                </a>
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    const o = row.otc;
+                    const checkout = o.payment_tx_signature?.trim();
+                    const lp = o.liquidity_tx?.trim() || '';
+                    const out = o.out_tx?.trim();
+                    const showSeparateOut = Boolean(out && checkout && out !== checkout);
                     return (
                       <tr key={checkout} className="border-t border-border/70 align-top">
                         <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                          {row.created_at}
+                          {o.created_at}
                         </td>
                         <td className="px-3 py-2 text-xs text-foreground/90 leading-snug whitespace-pre-line">
-                          {otcHistoryOneLine(row)}
+                          {otcHistoryOneLine(o)}
                         </td>
                         <td className="px-3 py-2 text-[11px] font-mono whitespace-nowrap">
                           <div className="flex flex-col gap-1 min-w-[200px]">
                             <span>
-                              <span className="text-muted-foreground">Transfer </span>
-                              <a
-                                href={`https://solscan.io/tx/${checkout}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-sol-green hover:underline"
-                              >
-                                {sigShort(checkout)}
-                              </a>
+                              <span className="text-muted-foreground">Buyer payment </span>
+                              {checkout ? (
+                                <a
+                                  href={`https://solscan.io/tx/${checkout}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sol-green hover:underline"
+                                >
+                                  {sigShort(checkout)}
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
                             </span>
                             <span>
                               <span className="text-muted-foreground">LP </span>
@@ -1089,9 +1187,11 @@ export default function EcosystemPage() {
                                 <span className="text-muted-foreground">—</span>
                               )}
                             </span>
-                            {showSeparateOut ? (
+                            {out ? (
                               <span>
-                                <span className="text-muted-foreground">Token out </span>
+                                <span className="text-muted-foreground">
+                                  {showSeparateOut ? 'RRTT to buyer ' : 'RRTT (same tx) '}
+                                </span>
                                 <a
                                   href={`https://solscan.io/tx/${out}`}
                                   target="_blank"
@@ -1101,7 +1201,9 @@ export default function EcosystemPage() {
                                   {sigShort(out)}
                                 </a>
                               </span>
-                            ) : null}
+                            ) : (
+                              <span className="text-muted-foreground">RRTT out — pending</span>
+                            )}
                           </div>
                         </td>
                       </tr>

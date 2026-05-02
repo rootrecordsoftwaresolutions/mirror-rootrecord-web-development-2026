@@ -462,7 +462,14 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         return json({ detail: del.detail, ok: false }, del.status);
       }
 
-      return json({ ok: true, custodial_sweep: del.custodial_sweep }, 200);
+      return json(
+        {
+          ok: true,
+          custodial_sweep: del.custodial_sweep,
+          custodial_wallet_keys_retained: del.custodial_wallet_keys_retained,
+        },
+        200,
+      );
 
     }
 

@@ -53,6 +53,8 @@ export async function insertTreasuryToCustodialLedger(
     units: number;
     txSignature: string;
     earnBalanceSnapshot: number;
+    /** Custodial SPL wallet that received RRTT (public audit + ecosystem history). */
+    custodialWalletPubkeyB58?: string | null;
   },
 ): Promise<void> {
   const userId = `user:${input.emailLower}`;
@@ -64,17 +66,19 @@ export async function insertTreasuryToCustodialLedger(
   };
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const recv = String(input.custodialWalletPubkeyB58 || "").trim() || null;
   await db
     .prepare(
       `INSERT INTO rr_earn_custodial_ledger (
          id, account_id, kind, direction, units, tx_signature, recipient_pubkey, app_snapshot_json, earn_balance_snapshot, notes, created_at
-       ) VALUES (?, ?, 'treasury_to_custodial', 'in', ?, ?, NULL, ?, ?, NULL, ?)`,
+       ) VALUES (?, ?, 'treasury_to_custodial', 'in', ?, ?, ?, ?, ?, NULL, ?)`,
     )
     .bind(
       id,
       input.accountId,
       input.units,
       input.txSignature,
+      recv,
       JSON.stringify(snapshot),
       input.earnBalanceSnapshot,
       now,

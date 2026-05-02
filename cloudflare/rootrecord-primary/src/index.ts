@@ -11,7 +11,8 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     const c = event.cron || "";
     if (c === "0 7 * * *") {
-      await runRrttCustodialPayoutCron(env);
+      const rrttStats = await runRrttCustodialPayoutCron(env);
+      console.log("rrtt custodial scheduled cron stats", JSON.stringify(rrttStats));
       return;
     }
     if (c === "45 8 * * *") {

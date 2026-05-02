@@ -186,12 +186,13 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
         /** Spendable RRTT = SPL balance in custodial wallet for this mint (withdraw UX matches wallet). */
         custodial_available_withdraw_units = onchainNum >= 0 ? onchainNum : availLedger;
         custodial_onchain_rrtt = onchain;
-        custodial_sum_ledger_and_wallet_units = balance + (onchainNum >= 0 ? onchainNum : 0);
-        /** Matches portal UI: total = ledger + on-chain RRTT; pending = total − on-chain SPL. */
-        custodial_pending_units = Math.max(
-          0,
-          custodial_sum_ledger_and_wallet_units - (onchainNum >= 0 ? onchainNum : 0),
-        );
+        /**
+         * `balance` is lifetime earn credits; `sent` is how much was mirrored to custodial in DB.
+         * Do not add balance + on-chain SPL (double-count). Headline total = not-yet-moved + in-wallet.
+         */
+        custodial_pending_units = Math.max(0, balance - sent);
+        custodial_sum_ledger_and_wallet_units =
+          custodial_pending_units + (onchainNum >= 0 ? onchainNum : 0);
       }
     }
   } catch {

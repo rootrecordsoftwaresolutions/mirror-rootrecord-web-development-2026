@@ -37,8 +37,18 @@ export type CustodialSweepResult = {
   signatures: string[];
 };
 
-function rpcUrl(env: SweepEnv): string {
-  return String(env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com").trim();
+function sweepRpcCandidates(env: SweepEnv): string[] {
+  const primary = String(env.SOLANA_RPC_URL || "").trim();
+  const fallbacks = [
+    "https://solana-rpc.publicnode.com",
+    "https://rpc.ankr.com/solana",
+    "https://api.mainnet-beta.solana.com",
+  ];
+  const out: string[] = [];
+  for (const u of [primary, ...fallbacks]) {
+    if (u && !out.includes(u)) out.push(u);
+  }
+  return out;
 }
 
 async function custodialPubkey(db: D1Database, accountId: string): Promise<PublicKey | null> {
@@ -164,8 +174,30 @@ export async function sweepCustodialToTreasury(env: SweepEnv, accountId: string)
     };
   }
 
-  const connection = new Connection(rpcUrl(env), "confirmed");
-  const hasAssets = await hasMeaningfulOnChainBalance(connection, pk);
+  /** Use first RPC that answers; empty-wallet detection must not trust a single blocked/failed host. */
+  let connection: Connection | null = null;
+  let hasAssets = false;
+  for (const url of sweepRpcCandidates(env)) {
+    try {
+      const c = new Connection(url, "confirmed");
+      await c.getLatestBlockhash("confirmed");
+      const h = await hasMeaningfulOnChainBalance(c, pk);
+      connection = c;
+      hasAssets = h;
+      break;
+    } catch {
+      /* try next */
+    }
+  }
+  if (!connection) {
+    return {
+      blocksDeletion: true,
+      userMessage:
+        "Could not reach Solana to verify your custodial wallet. Account deletion was blocked for safety — try again later.",
+      summary: "blocked_no_working_rpc",
+      signatures,
+    };
+  }
   if (!hasAssets) {
     return {
       blocksDeletion: false,

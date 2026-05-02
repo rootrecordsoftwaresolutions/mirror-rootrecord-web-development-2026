@@ -678,13 +678,125 @@ export type RrttCronEnv = InternalWalletEnv & {
   RRTT_TREASURY_SECRET_KEY_B58?: string;
 };
 
-export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void> {
-  const rpcUrl = String(env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com").trim();
+/** Honest summary of a treasury payout run (HTTP 200 must not imply every transfer landed). */
+export type RrttCronRunStats = {
+  skipped_no_mint: boolean;
+  no_treasury_key: boolean;
+  aborted_no_working_rpc: boolean;
+  rpc_url_used?: string;
+  wallet_rows: number;
+  sum_pending_units: number;
+  treasury_rrtt_raw_start: string | null;
+  rrtt_transfers_confirmed: number;
+  rrtt_transfers_skipped_treasury_short: number;
+  sol_topups_confirmed: number;
+  rows_chain_or_db_failed: number;
+  error_samples: string[];
+};
+
+function pushErrorSample(arr: string[], msg: string, max = 12) {
+  const s = msg.length > 220 ? `${msg.slice(0, 220)}…` : msg;
+  if (arr.length >= max) return;
+  arr.push(s);
+}
+
+/** Public mainnet-beta often 403s Cloudflare egress; try env RPC then fallbacks. */
+const RRTT_CRON_PUBLIC_RPC_FALLBACKS = [
+  "https://solana-rpc.publicnode.com",
+  "https://rpc.ankr.com/solana",
+  "https://api.mainnet-beta.solana.com",
+] as const;
+
+function rrttCronRpcCandidates(envUrl: string): string[] {
+  const out: string[] = [];
+  const u = String(envUrl || "").trim();
+  if (u) out.push(u);
+  for (const f of RRTT_CRON_PUBLIC_RPC_FALLBACKS) {
+    if (!out.includes(f)) out.push(f);
+  }
+  return out;
+}
+
+async function pickConnectionForRrttCron(envUrl: string, stats: RrttCronRunStats): Promise<Connection | null> {
+  for (const url of rrttCronRpcCandidates(envUrl)) {
+    try {
+      const c = new Connection(url, "confirmed");
+      await c.getLatestBlockhash("confirmed");
+      stats.rpc_url_used = url;
+      console.log("rrtt custodial cron using rpc", url.slice(0, 72));
+      return c;
+    } catch (e) {
+      const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+      console.error("rrtt cron rpc candidate failed", url.slice(0, 48), m);
+      pushErrorSample(stats.error_samples, `RPC ${url.slice(0, 36)}: ${m}`);
+    }
+  }
+  pushErrorSample(
+    stats.error_samples,
+    "No working Solana RPC for this run — set SOLANA_RPC_URL (secret) to Helius/QuickNode/etc. that allows Cloudflare Workers.",
+  );
+  return null;
+}
+
+/**
+ * Default `confirmTransaction` often throws "block height exceeded" on public RPC under load even when
+ * the signature later lands — treat that as soft-fail and poll status (up to ~2m).
+ */
+async function confirmCustodialCronTx(
+  connection: Connection,
+  signature: string,
+  latest: Readonly<{ blockhash: string; lastValidBlockHeight: number }>,
+): Promise<void> {
+  try {
+    await connection.confirmTransaction(
+      { signature, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+      "confirmed",
+    );
+    return;
+  } catch (e) {
+    const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+    if (!/block height exceeded|expired|timeout/i.test(m)) throw e;
+    console.warn("rrtt cron confirm: blockhash path failed, polling", signature.slice(0, 12), m);
+  }
+  const maxWaitMs = 120_000;
+  const started = Date.now();
+  while (Date.now() - started < maxWaitMs) {
+    const res = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+    const st = res.value?.[0];
+    if (st == null) {
+      await new Promise((r) => setTimeout(r, 2000));
+      continue;
+    }
+    if (st.err) throw new Error(`on-chain failure: ${JSON.stringify(st.err)}`);
+    const c = st.confirmationStatus;
+    if (c === "confirmed" || c === "finalized") return;
+    if (typeof st.confirmations === "number" && st.confirmations > 0) return;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error(`confirmation timeout (${signature.slice(0, 12)}…)`);
+}
+
+export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<RrttCronRunStats> {
+  const stats: RrttCronRunStats = {
+    skipped_no_mint: false,
+    no_treasury_key: false,
+    aborted_no_working_rpc: false,
+    wallet_rows: 0,
+    sum_pending_units: 0,
+    treasury_rrtt_raw_start: null,
+    rrtt_transfers_confirmed: 0,
+    rrtt_transfers_skipped_treasury_short: 0,
+    sol_topups_confirmed: 0,
+    rows_chain_or_db_failed: 0,
+    error_samples: [],
+  };
+
   const mintStr = String(env.RRTT_MINT_BASE58 || "").trim();
   const treasurySkB58 = String(env.RRTT_TREASURY_SECRET_KEY_B58 || "").trim();
   if (!mintStr) {
     console.log("rrtt custodial cron: skip (set RRTT_MINT_BASE58 for ATA + balance scan)");
-    return;
+    stats.skipped_no_mint = true;
+    return stats;
   }
   const decimals = Math.min(9, Math.max(0, Math.floor(Number(env.RRTT_DECIMALS ?? "0")) || 0));
   let treasury: Keypair | null = null;
@@ -696,11 +808,10 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
     }
   } else {
     console.log("rrtt custodial cron: no treasury key — on-chain cache refresh only (no treasury→custodial transfers)");
+    stats.no_treasury_key = true;
   }
   const canTransfer = Boolean(treasury);
   const mint = new PublicKey(mintStr);
-  const connection = new Connection(rpcUrl, "confirmed");
-  console.log("rrtt custodial cron start", { rpcUrl: rpcUrl.slice(0, 48) });
 
   const rows = await env.DB
     .prepare(
@@ -715,26 +826,98 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
     .all<{ account_id: string; email: string; custodial_b58: string; earn_balance: number; sent: number }>();
 
   const list = rows.results || [];
+  stats.wallet_rows = list.length;
+  for (const r of list) {
+    const earnBal = Math.max(0, Math.floor(Number(r.earn_balance) || 0));
+    const sent = Math.max(0, Math.floor(Number(r.sent) || 0));
+    stats.sum_pending_units += Math.max(0, earnBal - sent);
+  }
+
+  const connection = await pickConnectionForRrttCron(String(env.SOLANA_RPC_URL || "").trim(), stats);
+  if (!connection) {
+    stats.aborted_no_working_rpc = true;
+    console.error("rrtt custodial cron: abort (no working RPC)");
+    return stats;
+  }
+
+  /** Remaining treasury RRTT raw amount; decremented after each confirmed send. Null = could not read ATA. */
+  let treasuryRrttRawRemaining: bigint | null = null;
+  if (treasury) {
+    try {
+      const treasuryAta = getAssociatedTokenAddressSync(mint, treasury.publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const tb = await connection.getTokenAccountBalance(treasuryAta, "confirmed").catch(() => null);
+      if (tb?.value?.amount != null) {
+        treasuryRrttRawRemaining = BigInt(String(tb.value.amount));
+        stats.treasury_rrtt_raw_start = treasuryRrttRawRemaining.toString();
+      }
+    } catch {
+      treasuryRrttRawRemaining = null;
+    }
+  }
+
   const MIN_CUSTODIAL_SOL_LAMPORTS = CUSTODIAL_SOL_RESERVE_LAMPORTS;
   /** CU for SOL top-up + optional 2× ATA + transfer_checked; microLamports 0 = lowest priority fee. */
   const CRON_TX_COMPUTE_UNITS = 600_000;
 
   for (const r of list) {
     const earnBal = Math.max(0, Math.floor(Number(r.earn_balance) || 0));
-    const sent = Math.max(0, Math.floor(Number(r.sent) || 0));
-    const pending = Math.max(0, earnBal - sent);
-    /** Full earn→custodial gap each run (no partial/fraction transfers). */
-    const transferUnits = pending;
     const custodialPk = new PublicKey(r.custodial_b58);
     try {
       const custodialAta = getAssociatedTokenAddressSync(mint, custodialPk, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
+      /** If a prior send landed but DB confirm failed, SPL balance can exceed `units_sent_to_custodial` — bump DB before computing pending to avoid double-send. */
+      let sentEff = Math.max(0, Math.floor(Number(r.sent) || 0));
+      const balRecon = await connection.getTokenAccountBalance(custodialAta, "confirmed").catch(() => null);
+      let onChainWholeRecon = 0;
+      if (balRecon?.value) {
+        const uiR = balRecon.value.uiAmount;
+        if (uiR != null && Number.isFinite(uiR)) onChainWholeRecon = Math.floor(uiR);
+        else if (balRecon.value.amount != null) {
+          const rawR = Math.floor(Number(balRecon.value.amount) || 0);
+          const divR = decimals > 0 ? 10 ** decimals : 1;
+          onChainWholeRecon = Math.floor(rawR / divR);
+        }
+      }
+      if (onChainWholeRecon > sentEff) {
+        const reconciled = Math.min(earnBal, onChainWholeRecon);
+        if (reconciled > sentEff) {
+          await env.DB.prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)").bind(r.account_id).run();
+          await env.DB
+            .prepare(
+              `UPDATE rr_earn_custodial_state SET units_sent_to_custodial = ?, cache_updated_at = ? WHERE account_id = ?`,
+            )
+            .bind(reconciled, new Date().toISOString(), r.account_id)
+            .run();
+          console.log("rrtt cron reconciled units_sent_to_custodial from chain", r.account_id, sentEff, "→", reconciled);
+          sentEff = reconciled;
+        }
+      }
+
+      const pending = Math.max(0, earnBal - sentEff);
+      /** Full earn→custodial gap each run (no partial/fraction transfers). */
+      const transferUnits = pending;
+
       const lamportsCustodial = await connection.getBalance(custodialPk, "confirmed").catch(() => 0);
       const needsSolTopUp = Boolean(treasury) && lamportsCustodial < MIN_CUSTODIAL_SOL_LAMPORTS;
       const solTopUpLamports = needsSolTopUp ? MIN_CUSTODIAL_SOL_LAMPORTS - lamportsCustodial : 0;
-      const hasRrttTransfer = transferUnits > 0 && canTransfer && treasury;
+      const wantsRrtt = transferUnits > 0 && canTransfer && treasury;
 
-      if ((needsSolTopUp || hasRrttTransfer) && treasury) {
+      let rawTransfer = 0n;
+      if (wantsRrtt) {
+        const unitsHuman = Math.floor(transferUnits);
+        rawTransfer = decimals > 0 ? BigInt(unitsHuman) * 10n ** BigInt(decimals) : BigInt(unitsHuman);
+      }
+
+      let includeRrtt = wantsRrtt;
+      if (includeRrtt && treasuryRrttRawRemaining != null && rawTransfer > treasuryRrttRawRemaining) {
+        stats.rrtt_transfers_skipped_treasury_short += 1;
+        const m = `treasury RRTT insufficient for account_id=${r.account_id}: need_raw=${rawTransfer} remaining_raw=${treasuryRrttRawRemaining}`;
+        console.error("rrtt cron", m);
+        pushErrorSample(stats.error_samples, m);
+        includeRrtt = false;
+      }
+
+      if ((needsSolTopUp || includeRrtt) && treasury) {
         const ixs: TransactionInstruction[] = [
           ComputeBudgetProgram.setComputeUnitLimit({ units: CRON_TX_COMPUTE_UNITS }),
           ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 0 }),
@@ -748,12 +931,8 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
             }),
           );
         }
-        if (hasRrttTransfer) {
+        if (includeRrtt) {
           const treasuryAta = getAssociatedTokenAddressSync(mint, treasury.publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
-          const unitsHuman = Math.floor(transferUnits);
-          /** Ledger whole RRTT → raw SPL amount. */
-          const rawTransfer =
-            decimals > 0 ? BigInt(unitsHuman) * 10n ** BigInt(decimals) : BigInt(unitsHuman);
           ixs.push(
             createAssociatedTokenAccountIdempotentInstruction(
               treasury.publicKey,
@@ -793,14 +972,12 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
         const tx = new VersionedTransaction(msg.compileToV0Message());
         tx.sign([treasury]);
         const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 3 });
-        await connection.confirmTransaction(
-          { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
-          "confirmed",
-        );
+        await confirmCustodialCronTx(connection, sig, latest);
         if (solTopUpLamports > 0) {
+          stats.sol_topups_confirmed += 1;
           console.log("rrtt custodial sol topup", r.account_id, solTopUpLamports, sig);
         }
-        if (hasRrttTransfer) {
+        if (includeRrtt) {
           const now = new Date().toISOString();
           await env.DB.prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)").bind(r.account_id).run();
           const curRow = await env.DB
@@ -822,10 +999,16 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
               units: transferUnits,
               txSignature: sig,
               earnBalanceSnapshot: earnBal,
+              custodialWalletPubkeyB58: r.custodial_b58,
             });
           } catch (e) {
             const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
             console.error("ledger insert treasury", r.account_id, m);
+            pushErrorSample(stats.error_samples, `ledger insert ${r.account_id}: ${m}`);
+          }
+          stats.rrtt_transfers_confirmed += 1;
+          if (treasuryRrttRawRemaining != null) {
+            treasuryRrttRawRemaining -= rawTransfer;
           }
           console.log("rrtt transfer ok", r.account_id, transferUnits, "of", pending, "pending", sig);
         }
@@ -854,10 +1037,15 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
         .bind(onchain, lamports, now2, r.account_id)
         .run();
     } catch (e) {
+      stats.rows_chain_or_db_failed += 1;
       const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
       console.error("rrtt cron row", r.account_id, msg);
+      pushErrorSample(stats.error_samples, `${r.account_id}: ${msg}`);
     }
   }
+
+  console.log("rrtt custodial cron stats", JSON.stringify(stats));
+  return stats;
 }
 
 /** POST `/api/internal/run-rrtt-custodial-cron` — same as scheduled 07:00 job; `X-RR-Push-Admin-Key` required. */
@@ -878,8 +1066,27 @@ export async function handleRunRrttCustodialCronRoute(
     return json({ ok: false, detail: has ? "Invalid admin key." : "Missing X-RR-Push-Admin-Key header." }, 401);
   }
   try {
-    await runRrttCustodialPayoutCron(env);
-    return json({ ok: true, detail: "RRTT custodial payout cron finished." }, 200);
+    const stats = await runRrttCustodialPayoutCron(env);
+    if (stats.aborted_no_working_rpc) {
+      return json(
+        {
+          ok: false,
+          detail:
+            "Aborted: no Solana RPC answered from this Worker (no chain reads or transfers ran). Set SOLANA_RPC_URL to a provider that allows Cloudflare egress; see stats.error_samples.",
+          stats,
+        },
+        503,
+      );
+    }
+    return json(
+      {
+        ok: true,
+        detail:
+          "Cron finished (inspect stats: HTTP 200 does not mean every account received a full on-chain RRTT transfer).",
+        stats,
+      },
+      200,
+    );
   } catch (e) {
     const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
     console.error("run-rrtt-custodial-cron", m);

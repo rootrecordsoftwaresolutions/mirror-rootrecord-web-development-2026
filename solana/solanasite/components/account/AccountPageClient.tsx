@@ -610,11 +610,15 @@ export function AccountPageClient() {
     chainBal?.tokenOk === true ? (chainBal.rrttWhole ?? 0) : (onchainRrttApi ?? 0);
   const totalEarnUnits =
     earn != null && Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : null;
-  /** Ledger lifetime + SPL in custodial (135,800 + 1 = 135,801). Always from displayed wallet balance. */
-  const sumLedgerWallet = totalEarnUnits != null ? totalEarnUnits + rrttInWallet : null;
-  /** So Total = pending + in-wallet SPL (e.g. 135,801 = 135,800 + 1). */
+  /** Units the earn program has recorded as moved to custodial (not SPL read — avoids double-count vs `balance`). */
+  const unitsSentRaw = earnOptionalInt(earn, 'custodial_units_sent');
+  const unitsSentToCustodial = unitsSentRaw != null ? Math.max(0, unitsSentRaw) : 0;
+  /** Not yet mirrored to custodial in our ledger = earn credits minus recorded sends (matches Worker cron `pending`). */
   const pendingUnits =
-    sumLedgerWallet != null ? Math.max(0, sumLedgerWallet - rrttInWallet) : null;
+    totalEarnUnits != null ? Math.max(0, totalEarnUnits - unitsSentToCustodial) : null;
+  /** Headline total = pending slice + SPL in custodial wallet (e.g. 135,800 + 1 = 135,801 — not balance + wallet). */
+  const sumLedgerWallet =
+    pendingUnits != null ? pendingUnits + rrttInWallet : null;
   /** RRTT in the custodial SPL account is what the user can withdraw from that account. */
   const availWithdraw = rrttInWallet;
   const savedWithdrawDest =
@@ -787,8 +791,8 @@ export function AccountPageClient() {
                   }
                   hint={
                     totalEarnUnits != null
-                      ? `Earn ledger ${totalEarnUnits.toLocaleString()} + custodial SPL ${rrttInWallet.toLocaleString()} = ${sumLedgerWallet?.toLocaleString() ?? '—'} total units.`
-                      : 'Lifetime earn ledger plus RRTT SPL in your custodial wallet.'
+                      ? `Not yet custodial ${pendingUnits?.toLocaleString() ?? '—'} + custodial SPL ${rrttInWallet.toLocaleString()} = ${sumLedgerWallet?.toLocaleString() ?? '—'} total (earn ledger credits ${totalEarnUnits.toLocaleString()}).`
+                      : 'Pending ledger slice plus RRTT SPL in your custodial wallet.'
                   }
                 />
                 <BalanceStat
@@ -803,7 +807,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Ledger portion of the headline total. It plus in-wallet RRTT (green) equals Total RRTT."
+                  hint="Earn credits not yet recorded as moved to custodial (`balance` − `units_sent_to_custodial`). Matches what the treasury sweep targets."
                 />
                 <BalanceStat
                   label="Available to withdraw"
@@ -847,10 +851,12 @@ export function AccountPageClient() {
                   label="How to read this"
                   value={
                     <span className="block text-xs font-normal font-sans leading-relaxed text-muted-foreground tracking-normal">
-                      The earn ledger is your credited rewards total. &ldquo;Not yet in custodial wallet&rdquo; is the
-                      ledger slice that pairs with in-wallet RRTT so the headline total stays consistent.{' '}
+                      The earn ledger (`balance`) is your lifetime credited rewards. &ldquo;Not yet in custodial
+                      wallet&rdquo; is <span className="font-mono text-foreground">balance − units_sent_to_custodial</span>{' '}
+                      (not the same as adding full ledger + SPL — that would double-count). Headline total = that pending
+                      slice + in-wallet SPL.{' '}
                       <span className="text-foreground font-medium">RRTT in the custodial wallet is available to withdraw</span>{' '}
-                      (same number as &ldquo;Available to withdraw&rdquo;). Total = ledger + in-wallet SPL.{' '}
+                      (same number as &ldquo;Available to withdraw&rdquo;).{' '}
                       <span className="text-foreground font-medium">Fees:</span> RootRecord pays network costs for RRTT
                       withdrawals; you pay Solana fees for SOL (from balance over ~0.001 SOL), USDC, or any other token
                       you move out. {balancesLearnLink}

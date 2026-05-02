@@ -6,6 +6,8 @@
 name = "rootrecord-primary"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
+# Solana web3 + SPL use Buffer in some paths; required for treasury→custodial txs in this Worker.
+compatibility_flags = ["nodejs_compat"]
 
 [triggers]
 # NOAA push cadence + daily RRTT treasury → custodial sweep (07:00 UTC) + inactive-account purge (08:45 UTC).
@@ -40,6 +42,7 @@ RRTT_MINT_BASE58 = "6KfGKe13ASrV5WHvChbapQXxxEFRNqwpwrdEVsX6RQMT"
 RRTT_DECIMALS = "9"
 
 # Internal custodial wallet encryption (AES-256-GCM). deploy.ps1 uploads INTERNAL_WALLET_ENC_KEY_B64
+# Failsafe: application code never DELETEs `internal_solana_wallets` (encrypted keys) — even on DELETE /v1/me / inactive purge.
 # (from credentials.env, or .deploy-internal-wallet-key, or auto-generated like JWT_SECRET).
 # Manual: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" | wrangler secret put INTERNAL_WALLET_ENC_KEY_B64
 # Optional Discord channel for Solana tooling events (internal wallet provision, etc.):

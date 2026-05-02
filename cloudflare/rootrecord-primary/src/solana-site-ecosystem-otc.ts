@@ -5,6 +5,8 @@ import { json } from "./cors";
 export type SolanaSiteEcosystemOtcEnv = {
   DB: D1Database;
   SOLANA_SITE_LOG_SECRET?: string;
+  /** Shown on public earn→custodial history rows (same mint as OTC listing when configured). */
+  RRTT_MINT_BASE58?: string;
 };
 
 const MAX_SIG = 128;
@@ -74,7 +76,58 @@ export async function handleSolanaSiteEcosystemOtcRoutes(
           token_decimals: string | null;
           created_at: string;
         }>();
-      return json({ ok: true, rows: results ?? [] }, 200);
+
+      let custodial_sweep_rows: {
+        id: string;
+        created_at: string;
+        out_tx_signature: string;
+        custodial_wallet_b58: string;
+        units_whole: number;
+        token_mint: string | null;
+      }[] = [];
+      try {
+        const mintHint = trim(env.RRTT_MINT_BASE58, MAX_ADDR) || null;
+        const sweep = await env.DB.prepare(
+          `SELECT l.id, l.created_at, l.tx_signature AS out_tx_signature, l.units AS units_whole,
+                  COALESCE(NULLIF(TRIM(l.recipient_pubkey), ''), iw.pubkey) AS custodial_wallet_b58
+           FROM rr_earn_custodial_ledger l
+           LEFT JOIN internal_solana_wallets iw ON iw.account_id = l.account_id
+           WHERE l.kind = 'treasury_to_custodial' AND l.direction = 'in'
+             AND l.tx_signature IS NOT NULL AND TRIM(l.tx_signature) != ''
+           ORDER BY datetime(l.created_at) DESC
+           LIMIT ?`
+        )
+          .bind(lim)
+          .all<{
+            id: string;
+            created_at: string;
+            out_tx_signature: string;
+            units_whole: number;
+            custodial_wallet_b58: string;
+          }>();
+        custodial_sweep_rows = (sweep.results ?? []).map((r) => ({
+          id: r.id,
+          created_at: r.created_at,
+          out_tx_signature: r.out_tx_signature,
+          custodial_wallet_b58: String(r.custodial_wallet_b58 || "").trim(),
+          units_whole: Math.max(0, Math.floor(Number(r.units_whole) || 0)),
+          token_mint: mintHint,
+        }));
+      } catch (e2) {
+        const m2 = e2 instanceof Error ? e2.message : String(e2);
+        if (!/no such table|no such column/i.test(m2)) {
+          console.error("ecosystem-otc-history custodial sweep query", m2);
+        }
+      }
+
+      return json(
+        {
+          ok: true,
+          rows: results ?? [],
+          custodial_sweep_rows,
+        },
+        200,
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : "query_failed";
       const isMissingTable = /no such table/i.test(msg);
