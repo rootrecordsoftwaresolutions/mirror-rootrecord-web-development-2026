@@ -25,6 +25,7 @@ import {
   portalLinkWallet,
   portalLogout,
   portalSaveWithdrawDest,
+  portalWithdrawRrtt,
   portalUnlinkWallet,
   type EarnSummary,
   type PortalMeData,
@@ -251,6 +252,8 @@ export function AccountPageClient() {
   const [linkBusy, setLinkBusy] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
   const [withdrawDraft, setWithdrawDraft] = useState('');
+  const [withdrawAmtWhole, setWithdrawAmtWhole] = useState('');
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
   const [me, setMe] = useState<PortalMeData | null>(null);
   const [earn, setEarn] = useState<EarnSummary | null>(null);
   const [ledger, setLedger] = useState<RewardsLedgerPage | null>(null);
@@ -409,7 +412,7 @@ export function AccountPageClient() {
     const ok1 = window.confirm(
       'Delete your RootRecord account?\n\n' +
         'This removes your portal profile and server data (saved locations, notifications). ' +
-        'It also removes your custodial web wallet from RootRecord: SOL, RRTT, and other SPL tokens in that wallet are sent back to the treasury, then your keys are deleted. ' +
+        'It also removes your custodial web wallet from RootRecord: SOL, RRTT, and other SPL in that wallet are swept back to treasury when possible. Encrypted custodial key material is retained in our database for recovery — do not rely on deletion to erase keys. ' +
         'Withdraw first if you want to keep any balance in your own wallet. ' +
         'If the on-chain return step fails, deletion is cancelled. This cannot be undone once it succeeds.',
     );
@@ -583,6 +586,38 @@ export function AccountPageClient() {
     await loadAccount();
   }
 
+  async function onWithdrawRrtt() {
+    const token = getPortalToken();
+    if (!token || !me) {
+      applyStatus('You are not signed in.', 'warn');
+      return;
+    }
+    const raw = withdrawAmtWhole.replace(/,/g, '').trim();
+    let amount: number | undefined;
+    if (raw !== '') {
+      const n = Math.floor(Number(raw));
+      if (!Number.isFinite(n) || n < 1) {
+        toast.error('Enter a whole number ≥ 1, or leave blank for full balance.');
+        return;
+      }
+      amount = n;
+    }
+    setWithdrawBusy(true);
+    applyStatus('', '');
+    try {
+      const r = await portalWithdrawRrtt(token, amount != null ? { amount_whole: amount } : {});
+      if (!r.ok) {
+        toast.error(r.detail);
+        return;
+      }
+      toast.success(`Sent ${r.amount_whole.toLocaleString()} RRTT — ${r.tx_signature.slice(0, 12)}…`);
+      setWithdrawAmtWhole('');
+      await loadAccount();
+    } finally {
+      setWithdrawBusy(false);
+    }
+  }
+
   function onUseConnectedForWithdraw() {
     if (!publicKey) {
       toast.error('Connect a wallet in the header first');
@@ -596,6 +631,9 @@ export function AccountPageClient() {
   const linkedVerified = me ? linkedVerifiedFromMe(me) : '';
   const connectedPk = publicKey?.toBase58() ?? '';
   const linkedMatchesConnected = Boolean(linkedPk && connectedPk && linkedPk === connectedPk);
+  const savedWithdrawDest =
+    me && typeof me.withdraw_dest_pubkey === 'string' ? me.withdraw_dest_pubkey.trim() : '';
+  const canWithdrawDest = Boolean(linkedVerified || savedWithdrawDest);
   const custodialPk = custodialPubFromMe(me);
   const solLamportsApi = solCachedLamportsBigint(me);
   const solLamportsChain =
@@ -621,8 +659,6 @@ export function AccountPageClient() {
     pendingUnits != null ? pendingUnits + rrttInWallet : null;
   /** RRTT in the custodial SPL account is what the user can withdraw from that account. */
   const availWithdraw = rrttInWallet;
-  const savedWithdrawDest =
-    me && typeof me.withdraw_dest_pubkey === 'string' ? me.withdraw_dest_pubkey.trim() : '';
 
   const usdcDisplay =
     chainBal?.usdcOk === true && chainBal.usdcRaw != null
@@ -1183,6 +1219,42 @@ export function AccountPageClient() {
                   <SolscanAddressLink address={savedWithdrawDest} />
                 </p>
               ) : null}
+              <div className="space-y-2 max-w-lg pt-4 border-t border-border/60 mt-4">
+                <Label className="text-xs">Withdraw now (whole RRTT)</Label>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Sends from your custodial wallet to your verified linked wallet, or your saved payout address if no
+                  linked wallet. Leave blank to withdraw the full on-chain balance. Treasury pays this transaction&apos;s
+                  Solana fee.
+                </p>
+                <Input
+                  value={withdrawAmtWhole}
+                  onChange={(e) => setWithdrawAmtWhole(e.target.value)}
+                  placeholder={availWithdraw != null ? `Max ${availWithdraw.toLocaleString()} (blank = all)` : 'Amount'}
+                  className="font-mono text-xs"
+                  inputMode="numeric"
+                  spellCheck={false}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={
+                    withdrawBusy ||
+                    genBusy ||
+                    !custodialPk ||
+                    availWithdraw == null ||
+                    availWithdraw < 1 ||
+                    !canWithdrawDest
+                  }
+                  onClick={() => void onWithdrawRrtt()}
+                >
+                  {withdrawBusy ? 'Sending…' : 'Withdraw RRTT'}
+                </Button>
+                {!canWithdrawDest ? (
+                  <p className="text-xs text-amber-200/90">
+                    Link and verify a header wallet, or save a payout address, before withdrawing.
+                  </p>
+                ) : null}
+              </div>
             </CardContent>
           </Card>
 
@@ -1194,7 +1266,8 @@ export function AccountPageClient() {
                 notifications). It also ends your{' '}
                 <strong className="text-foreground font-medium">custodial web wallet</strong> here: RootRecord returns{' '}
                 <strong className="text-foreground font-medium">SOL, RRTT, and other SPL tokens</strong> from that
-                wallet to our treasury, then deletes your encrypted wallet record. Anything you want to keep under your
+                wallet to our treasury when possible. Encrypted custodial keys are not deleted from our database (custody
+                / recovery). Anything you want under your
                 own control should be <strong className="text-foreground font-medium">withdrawn first</strong>. If the
                 on-chain sweep cannot complete, deletion is blocked until that is fixed.
               </p>

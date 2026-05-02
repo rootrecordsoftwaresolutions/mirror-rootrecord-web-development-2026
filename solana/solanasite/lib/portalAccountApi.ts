@@ -314,6 +314,41 @@ export async function portalSaveWithdrawDest(
   return { ok: true };
 }
 
+export async function portalWithdrawRrtt(
+  token: string,
+  opts?: { amount_whole?: number; destination_pubkey?: string | null },
+): Promise<
+  | { ok: true; tx_signature: string; amount_whole: number; destination: string }
+  | { ok: false; detail: string; tx_signature?: string }
+> {
+  const base = getRootRecordApiBase();
+  if (!base) return { ok: false, detail: 'Account API is not configured.' };
+  const body: Record<string, unknown> = {};
+  if (opts?.amount_whole != null && Number.isFinite(opts.amount_whole) && opts.amount_whole > 0) {
+    body.amount_whole = Math.floor(opts.amount_whole);
+  }
+  if (opts?.destination_pubkey !== undefined) {
+    body.destination_pubkey = opts.destination_pubkey;
+  }
+  const res = await fetch(`${base}/v1/me/custodial-withdraw-rrtt`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const { j } = await parsePortalJson(res);
+  if (!res.ok || j?.ok === false) {
+    const detail = friendlyPortalApiError(j) || 'Could not withdraw RRTT.';
+    const tx = typeof j?.tx_signature === 'string' ? j.tx_signature : undefined;
+    return { ok: false, detail, tx_signature: tx };
+  }
+  return {
+    ok: true,
+    tx_signature: String(j?.tx_signature || ''),
+    amount_whole: Math.max(0, Math.floor(Number(j?.amount_whole) || 0)),
+    destination: String(j?.destination || ''),
+  };
+}
+
 export async function portalUnlinkWallet(
   token: string,
 ): Promise<{ ok: true } | { ok: false; detail: string }> {

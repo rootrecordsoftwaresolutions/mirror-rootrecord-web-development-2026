@@ -98,6 +98,8 @@ export type InternalWalletEnv = AuthEnv & {
   SOLANA_RPC_URL?: string;
   /** Treasury key for SOL top-ups and RRTT cron (same secret as RRTT cron). */
   RRTT_TREASURY_SECRET_KEY_B58?: string;
+  RRTT_MINT_BASE58?: string;
+  RRTT_DECIMALS?: string;
 };
 
 async function readWalletRow(
@@ -742,7 +744,7 @@ async function pickConnectionForRrttCron(envUrl: string, stats: RrttCronRunStats
  * Default `confirmTransaction` often throws "block height exceeded" on public RPC under load even when
  * the signature later lands — treat that as soft-fail and poll status (up to ~2m).
  */
-async function confirmCustodialCronTx(
+export async function confirmSignedTxWithPoll(
   connection: Connection,
   signature: string,
   latest: Readonly<{ blockhash: string; lastValidBlockHeight: number }>,
@@ -972,7 +974,7 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<Rrtt
         const tx = new VersionedTransaction(msg.compileToV0Message());
         tx.sign([treasury]);
         const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 3 });
-        await confirmCustodialCronTx(connection, sig, latest);
+        await confirmSignedTxWithPoll(connection, sig, latest);
         if (solTopUpLamports > 0) {
           stats.sol_topups_confirmed += 1;
           console.log("rrtt custodial sol topup", r.account_id, solTopUpLamports, sig);

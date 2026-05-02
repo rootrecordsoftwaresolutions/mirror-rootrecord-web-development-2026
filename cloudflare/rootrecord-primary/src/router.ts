@@ -32,6 +32,7 @@ import { handleSolanaSiteEcosystemOtcRoutes } from "./solana-site-ecosystem-otc"
 import { maybeForwardSolanaToolsApi } from "./solana-tools-forward";
 import { handleSolanaAppActivityRoute } from "./solana-app-activity";
 import { handleSolanaLinkedWalletRoute } from "./solana-linked-wallet";
+import { handleCustodialRrttWithdrawV1 } from "./custodial-rrtt-withdraw";
 
 import {
 
@@ -428,6 +429,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     }
 
+    if (pathname === "/v1/me/custodial-withdraw-rrtt") {
+
+      return handleCustodialRrttWithdrawV1(request, env, method);
+
+    }
+
     if (pathname === "/v1/me/rewards-ledger") {
 
       return handleRewardsLedgerV1(request, env, method);
@@ -561,6 +568,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   if (sub === "/v1/me/custodial-withdraw-dest") {
     return handleCustodialWithdrawDestV1(request, env, method);
+  }
+
+  if (sub === "/v1/me/custodial-withdraw-rrtt") {
+    return handleCustodialRrttWithdrawV1(request, env, method);
   }
 
   if (sub === "/v1/me/custodial-sol-wallet" || sub.startsWith("/v1/me/custodial-sol-wallet/")) {
