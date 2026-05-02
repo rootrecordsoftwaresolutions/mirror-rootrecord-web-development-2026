@@ -179,10 +179,27 @@ function RewardsProgramNote({ earn }: { earn: EarnSummary | null }) {
       </p>
     );
   }
+  const total = Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : 0;
+  const pending = numEarn(earn, 'custodial_pending_units');
+  const sent = numEarn(earn, 'custodial_units_sent');
+  const ledgerAllPending = total > 0 && pending === total && sent === 0;
+
   return (
-    <p className="text-xs text-muted-foreground leading-relaxed">
-      Treasury sends RRTT to your custodial wallet on the daily schedule when enabled. {learn}
-    </p>
+    <div className="space-y-2">
+      {ledgerAllPending ? (
+        <p className="text-xs text-muted-foreground leading-relaxed border-l-2 border-amber-500/40 pl-3">
+          <span className="text-foreground font-medium">These figures can look wrong but are consistent:</span> your
+          total is still on the <em className="not-italic">earn ledger</em> (in-app rewards). Nothing is
+          &ldquo;available to withdraw&rdquo; until the treasury has transferred matching units to your custodial wallet
+          and the daily job has updated the cache. &ldquo;RRTT in custodial wallet&rdquo; stays — until that scan runs.
+          If it never changes, the Worker cron may be skipping (treasury env not set) or transfers may be failing —
+          check Worker logs for <span className="font-mono text-[11px]">rrtt custodial cron</span>. {learn}
+        </p>
+      ) : null}
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Treasury sends RRTT to your custodial wallet on the daily schedule when enabled. {learn}
+      </p>
+    </div>
   );
 }
 
@@ -277,6 +294,22 @@ export function AccountPageClient() {
   useEffect(() => {
     void loadAccount();
   }, [loadAccount]);
+
+  /** Refresh portal + earn + ledger while signed in (API pulls mainnet and updates D1 cache server-side). */
+  useEffect(() => {
+    if (phase !== 'account' || !hasApi) return;
+    const id = setInterval(() => {
+      void loadAccount();
+    }, 45_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void loadAccount();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [phase, hasApi, loadAccount]);
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();

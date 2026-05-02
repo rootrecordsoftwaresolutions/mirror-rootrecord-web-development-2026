@@ -1,11 +1,14 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import {
+  ComputeBudgetProgram,
   Connection,
   Keypair,
   PublicKey,
+  SystemProgram,
   Transaction,
   TransactionMessage,
   VersionedTransaction,
+  type TransactionInstruction,
 } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -22,6 +25,13 @@ import { verifyWorkerOpsAdmin } from "./push";
 import { sessionFromBearer, type AuthEnv } from "./primary-auth";
 import { notifySolanaToolsDiscord } from "./discord-solana-notify";
 import { insertTreasuryToCustodialLedger } from "./earn-rewards-ledger";
+import {
+  CUSTODIAL_SOL_RESERVE_LAMPORTS,
+  custodialSolSpendWouldViolateReserve,
+  estimateFeeIfCustodialPays,
+  sumLamportsTransferredFromCustodian,
+  tryDecompileCustodialSignInstructions,
+} from "./custodial-sol-reserve";
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -84,6 +94,8 @@ export type InternalWalletEnv = AuthEnv & {
   DB: D1Database;
   INTERNAL_WALLET_ENC_KEY_B64?: string;
   DISCORD_WEBHOOK_SOLANA_TOOLS?: string;
+  /** Mainnet RPC for custodial sign reserve checks (optional; defaults in handler). */
+  SOLANA_RPC_URL?: string;
 };
 
 async function readWalletRow(
@@ -446,6 +458,35 @@ export async function handleCustodialSolWalletV1(
     }
     const kp = await loadKeypairForAccount(env, sess.accountId);
     if (!kp) return json({ detail: "No custodial wallet on file or cannot decrypt key." }, 403);
+
+    const decompiled = tryDecompileCustodialSignInstructions(raw);
+    if (!decompiled) {
+      return json(
+        {
+          detail:
+            "Could not read this transaction (unsupported encoding or address lookup tables). Try rebuilding the transaction or contact support.",
+        },
+        422,
+      );
+    }
+    const solOut = sumLamportsTransferredFromCustodian(decompiled, kp.publicKey);
+    const feeIfPayer = estimateFeeIfCustodialPays(raw, kp.publicKey);
+    const totalSolDebit = solOut + feeIfPayer;
+    if (totalSolDebit > 0n) {
+      const rpcUrl = String(env.SOLANA_RPC_URL || "").trim() || "https://api.mainnet-beta.solana.com";
+      const connection = new Connection(rpcUrl, "confirmed");
+      const bal = await connection.getBalance(kp.publicKey, "confirmed").catch(() => 0);
+      if (custodialSolSpendWouldViolateReserve(bal, totalSolDebit)) {
+        const minSol = (CUSTODIAL_SOL_RESERVE_LAMPORTS / 1e9).toFixed(4);
+        return json(
+          {
+            detail: `This transaction would spend too much SOL from your custodial wallet. At least ${minSol} SOL must stay for network fees (plus a small buffer). Reduce the SOL transfer or remove it.`,
+          },
+          400,
+        );
+      }
+    }
+
     try {
       let signed: Transaction | VersionedTransaction;
       try {
@@ -575,18 +616,22 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
   const rpcUrl = String(env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com").trim();
   const mintStr = String(env.RRTT_MINT_BASE58 || "").trim();
   const treasurySkB58 = String(env.RRTT_TREASURY_SECRET_KEY_B58 || "").trim();
-  if (!mintStr || !treasurySkB58) {
-    console.log("rrtt custodial cron: skip (set RRTT_MINT_BASE58 and RRTT_TREASURY_SECRET_KEY_B58)");
+  if (!mintStr) {
+    console.log("rrtt custodial cron: skip (set RRTT_MINT_BASE58 for ATA + balance scan)");
     return;
   }
   const decimals = Math.min(9, Math.max(0, Math.floor(Number(env.RRTT_DECIMALS ?? "0")) || 0));
-  let treasury: Keypair;
-  try {
-    treasury = Keypair.fromSecretKey(bs58.decode(treasurySkB58));
-  } catch {
-    console.error("rrtt custodial cron: bad treasury key");
-    return;
+  let treasury: Keypair | null = null;
+  if (treasurySkB58) {
+    try {
+      treasury = Keypair.fromSecretKey(bs58.decode(treasurySkB58));
+    } catch {
+      console.error("rrtt custodial cron: bad treasury key (on-chain cache refresh still runs)");
+    }
+  } else {
+    console.log("rrtt custodial cron: no treasury key — on-chain cache refresh only (no treasury→custodial transfers)");
   }
+  const canTransfer = Boolean(treasury);
   const mint = new PublicKey(mintStr);
   const connection = new Connection(rpcUrl, "confirmed");
 
@@ -603,6 +648,10 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
     .all<{ account_id: string; email: string; custodial_b58: string; earn_balance: number; sent: number }>();
 
   const list = rows.results || [];
+  const MIN_CUSTODIAL_SOL_LAMPORTS = CUSTODIAL_SOL_RESERVE_LAMPORTS;
+  /** CU for SOL top-up + optional 2× ATA + transfer_checked; microLamports 0 = lowest priority fee. */
+  const CRON_TX_COMPUTE_UNITS = 600_000;
+
   for (const r of list) {
     const earnBal = Math.max(0, Math.floor(Number(r.earn_balance) || 0));
     const sent = Math.max(0, Math.floor(Number(r.sent) || 0));
@@ -610,30 +659,63 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
     const custodialPk = new PublicKey(r.custodial_b58);
     try {
       const custodialAta = getAssociatedTokenAddressSync(mint, custodialPk, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
-      const treasuryAta = getAssociatedTokenAddressSync(mint, treasury.publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
-      if (pending > 0) {
-        const latest = await connection.getLatestBlockhash("confirmed");
-        const ixs = [
-          createAssociatedTokenAccountIdempotentInstruction(
-            treasury.publicKey,
-            custodialAta,
-            custodialPk,
-            mint,
-            TOKEN_PROGRAM_ID,
-            ASSOCIATED_TOKEN_PROGRAM_ID,
-          ),
-          createTransferCheckedInstruction(
-            treasuryAta,
-            mint,
-            custodialAta,
-            treasury.publicKey,
-            BigInt(pending),
-            decimals,
-            [],
-            TOKEN_PROGRAM_ID,
-          ),
+      const lamportsCustodial = await connection.getBalance(custodialPk, "confirmed").catch(() => 0);
+      const needsSolTopUp = Boolean(treasury) && lamportsCustodial < MIN_CUSTODIAL_SOL_LAMPORTS;
+      const solTopUpLamports = needsSolTopUp ? MIN_CUSTODIAL_SOL_LAMPORTS - lamportsCustodial : 0;
+      const hasRrttTransfer = pending > 0 && canTransfer && treasury;
+
+      if ((needsSolTopUp || hasRrttTransfer) && treasury) {
+        const ixs: TransactionInstruction[] = [
+          ComputeBudgetProgram.setComputeUnitLimit({ units: CRON_TX_COMPUTE_UNITS }),
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 0 }),
         ];
+        if (solTopUpLamports > 0) {
+          ixs.push(
+            SystemProgram.transfer({
+              fromPubkey: treasury.publicKey,
+              toPubkey: custodialPk,
+              lamports: solTopUpLamports,
+            }),
+          );
+        }
+        if (hasRrttTransfer) {
+          const treasuryAta = getAssociatedTokenAddressSync(mint, treasury.publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+          const pendingHuman = Math.floor(pending);
+          /** Ledger whole RRTT → raw SPL amount. */
+          const rawTransfer =
+            decimals > 0 ? BigInt(pendingHuman) * 10n ** BigInt(decimals) : BigInt(pendingHuman);
+          ixs.push(
+            createAssociatedTokenAccountIdempotentInstruction(
+              treasury.publicKey,
+              treasuryAta,
+              treasury.publicKey,
+              mint,
+              TOKEN_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID,
+            ),
+            createAssociatedTokenAccountIdempotentInstruction(
+              treasury.publicKey,
+              custodialAta,
+              custodialPk,
+              mint,
+              TOKEN_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID,
+            ),
+            createTransferCheckedInstruction(
+              treasuryAta,
+              mint,
+              custodialAta,
+              treasury.publicKey,
+              rawTransfer,
+              decimals,
+              [],
+              TOKEN_PROGRAM_ID,
+            ),
+          );
+        }
+
+        const latest = await connection.getLatestBlockhash("confirmed");
         const msg = new TransactionMessage({
           payerKey: treasury.publicKey,
           recentBlockhash: latest.blockhash,
@@ -646,38 +728,54 @@ export async function runRrttCustodialPayoutCron(env: RrttCronEnv): Promise<void
           { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
           "confirmed",
         );
-        const now = new Date().toISOString();
-        await env.DB.prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)").bind(r.account_id).run();
-        const curRow = await env.DB
-          .prepare("SELECT units_sent_to_custodial FROM rr_earn_custodial_state WHERE account_id = ?")
-          .bind(r.account_id)
-          .first<{ units_sent_to_custodial: number }>();
-        const curSent = Math.max(0, Math.floor(Number(curRow?.units_sent_to_custodial) || 0));
-        const newSent = curSent + pending;
-        await env.DB
-          .prepare(
-            `UPDATE rr_earn_custodial_state SET units_sent_to_custodial = ?, last_treasury_transfer_at = ?, last_treasury_transfer_sig = ? WHERE account_id = ?`,
-          )
-          .bind(newSent, now, sig, r.account_id)
-          .run();
-        try {
-          await insertTreasuryToCustodialLedger(env.DB, {
-            accountId: r.account_id,
-            emailLower: String(r.email || "").toLowerCase(),
-            units: pending,
-            txSignature: sig,
-            earnBalanceSnapshot: earnBal,
-          });
-        } catch (e) {
-          const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
-          console.error("ledger insert treasury", r.account_id, m);
+        if (solTopUpLamports > 0) {
+          console.log("rrtt custodial sol topup", r.account_id, solTopUpLamports, sig);
         }
-        console.log("rrtt transfer ok", r.account_id, pending, sig);
+        if (hasRrttTransfer) {
+          const now = new Date().toISOString();
+          await env.DB.prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)").bind(r.account_id).run();
+          const curRow = await env.DB
+            .prepare("SELECT units_sent_to_custodial FROM rr_earn_custodial_state WHERE account_id = ?")
+            .bind(r.account_id)
+            .first<{ units_sent_to_custodial: number }>();
+          const curSent = Math.max(0, Math.floor(Number(curRow?.units_sent_to_custodial) || 0));
+          const newSent = curSent + pending;
+          await env.DB
+            .prepare(
+              `UPDATE rr_earn_custodial_state SET units_sent_to_custodial = ?, last_treasury_transfer_at = ?, last_treasury_transfer_sig = ? WHERE account_id = ?`,
+            )
+            .bind(newSent, now, sig, r.account_id)
+            .run();
+          try {
+            await insertTreasuryToCustodialLedger(env.DB, {
+              accountId: r.account_id,
+              emailLower: String(r.email || "").toLowerCase(),
+              units: pending,
+              txSignature: sig,
+              earnBalanceSnapshot: earnBal,
+            });
+          } catch (e) {
+            const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+            console.error("ledger insert treasury", r.account_id, m);
+          }
+          console.log("rrtt transfer ok", r.account_id, pending, sig);
+        }
       }
 
       const bal = await connection.getTokenAccountBalance(custodialAta).catch(() => null);
       const lamports = await connection.getBalance(custodialPk, "confirmed").catch(() => 0);
-      const onchain = bal?.value?.amount != null ? Math.floor(Number(bal.value.amount) || 0) : null;
+      /** Match earn ledger “whole token” style: prefer RPC uiAmount (human), else raw / 10^decimals. */
+      let onchain: number | null = null;
+      if (bal?.value) {
+        const ui = bal.value.uiAmount;
+        if (ui != null && Number.isFinite(ui)) {
+          onchain = Math.floor(ui);
+        } else if (bal.value.amount != null) {
+          const raw = Math.floor(Number(bal.value.amount) || 0);
+          const div = decimals > 0 ? 10 ** decimals : 1;
+          onchain = Math.floor(raw / div);
+        }
+      }
       const now2 = new Date().toISOString();
       await env.DB.prepare("INSERT OR IGNORE INTO rr_earn_custodial_state (account_id) VALUES (?)").bind(r.account_id).run();
       await env.DB

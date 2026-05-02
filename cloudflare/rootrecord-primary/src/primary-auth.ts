@@ -23,6 +23,7 @@ import { readUserAccountAccessFlags } from "./accounts";
 
 import { getAppAssociationsForEmail } from "../../shared/app-associations";
 import { grantSignupBonusOnRegistration } from "./earn-signup-bonus";
+import { refreshCustodialOnchainCacheFromRpc } from "./custodial-onchain-cache";
 
 
 
@@ -43,6 +44,14 @@ export interface AuthEnv {
   /** Recurring Price id for web checkout (wrangler [vars] STRIPE_PRICE_ID). */
 
   STRIPE_PRICE_ID?: string;
+
+  /** Mainnet RPC for custodial balance cache refresh on `/v1/me`. */
+
+  SOLANA_RPC_URL?: string;
+
+  RRTT_MINT_BASE58?: string;
+
+  RRTT_DECIMALS?: string;
 
 }
 
@@ -617,6 +626,12 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
   let custodial_sol_lamports_cached: number | null = null;
 
   try {
+
+    await refreshCustodialOnchainCacheFromRpc(env, sess.accountId).catch(() => {
+
+      /* optional RPC */
+
+    });
 
     const cw = await env.DB
 

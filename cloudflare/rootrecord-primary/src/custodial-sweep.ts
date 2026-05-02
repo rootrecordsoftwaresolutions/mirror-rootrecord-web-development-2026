@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import {
+  ComputeBudgetProgram,
   Connection,
   Keypair,
   PublicKey,
@@ -118,6 +119,8 @@ function collectParsedTokenAccounts(
   return out;
 }
 
+const SWEEP_COMPUTE_UNITS = 600_000;
+
 async function sendSweepTx(
   connection: Connection,
   treasury: Keypair,
@@ -125,10 +128,14 @@ async function sendSweepTx(
   instructions: import("@solana/web3.js").TransactionInstruction[],
 ): Promise<string> {
   const latest = await connection.getLatestBlockhash("confirmed");
+  const budgetFirst = [
+    ComputeBudgetProgram.setComputeUnitLimit({ units: SWEEP_COMPUTE_UNITS }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 0 }),
+  ];
   const msg = new TransactionMessage({
     payerKey: treasury.publicKey,
     recentBlockhash: latest.blockhash,
-    instructions,
+    instructions: [...budgetFirst, ...instructions],
   });
   const tx = new VersionedTransaction(msg.compileToV0Message());
   tx.sign([treasury, custodial]);

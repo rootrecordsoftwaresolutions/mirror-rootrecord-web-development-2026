@@ -3,10 +3,15 @@ import { json } from "./cors";
 import { resolveUserId } from "./auth";
 import { getSignupBonusRow, SIGNUP_BONUS_UNITS } from "./earn-signup-bonus";
 import { sessionFromBearer } from "./primary-auth";
+import { refreshCustodialOnchainCacheFromRpc } from "./custodial-onchain-cache";
+import type { CustodialCacheRpcEnv } from "./custodial-onchain-cache";
 
 export interface EarnEnv {
   DB: D1Database;
   JWT_SECRET: string;
+  SOLANA_RPC_URL?: string;
+  RRTT_MINT_BASE58?: string;
+  RRTT_DECIMALS?: string;
 }
 
 /** Per second of credited time on a route; 15 min = 900s → 900×20 = 18,000 units per page visit max. */
@@ -156,7 +161,10 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
     if (auth.toLowerCase().startsWith("bearer ") && env.JWT_SECRET) {
       const sess = await sessionFromBearer(env, auth.slice(7).trim());
       if (sess) {
-        const st = await env.DB
+        await refreshCustodialOnchainCacheFromRpc(env as CustodialCacheRpcEnv, sess.accountId).catch(() => {
+          /* RPC/D1 optional */
+        });
+        const csRow = await env.DB
           .prepare(
             `SELECT IFNULL(cs.units_sent_to_custodial, 0) AS sent,
                     IFNULL(cs.units_withdrawn_from_custodial, 0) AS withdrawn,
@@ -166,9 +174,9 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
           )
           .bind(sess.accountId)
           .first<{ sent: number; withdrawn: number; onchain: number | null }>();
-        const sent = Math.max(0, Math.floor(Number(st?.sent) || 0));
-        const withdrawn = Math.max(0, Math.floor(Number(st?.withdrawn) || 0));
-        const onchain = st?.onchain != null ? Math.max(0, Math.floor(Number(st.onchain) || 0)) : null;
+        const sent = Math.max(0, Math.floor(Number(csRow?.sent) || 0));
+        const withdrawn = Math.max(0, Math.floor(Number(csRow?.withdrawn) || 0));
+        const onchain = csRow?.onchain != null ? Math.max(0, Math.floor(Number(csRow.onchain) || 0)) : null;
         custodial_units_sent = sent;
         custodial_pending_units = Math.max(0, balance - sent);
         const availLedger = Math.max(0, sent - withdrawn);
