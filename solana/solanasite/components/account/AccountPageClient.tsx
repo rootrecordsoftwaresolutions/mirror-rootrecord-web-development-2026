@@ -753,7 +753,11 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Cached SPL balance; updates when the daily treasury job runs."
+                  hint={
+                    pendingUnits != null && pendingUnits > 0 && onchainRrtt === 0
+                      ? 'Mainnet SPL balance for this mint. Stays 0 until the treasury sends matching units on-chain (pending above).'
+                      : 'Mainnet SPL balance for this mint; refreshed when you load the account (and periodically while signed in).'
+                  }
                 />
                 <BalanceStat
                   label="SOL in custodial wallet"
@@ -764,7 +768,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Cached lamports from the same refresh job."
+                  hint="Native SOL on the custodial pubkey; same refresh as RRTT (not your linked self-custody wallet)."
                 />
               </div>
               <RewardsProgramNote earn={earn} />
