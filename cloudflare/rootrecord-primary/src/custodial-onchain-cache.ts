@@ -26,6 +26,21 @@ function envDecimals(env: CustodialCacheRpcEnv): number {
   return Math.min(9, Math.max(0, Math.floor(Number(String(env.RRTT_DECIMALS || "9").trim()) || 9) || 0));
 }
 
+/** Try primary RPC first, then public fallbacks (Worker ↔ single host rate limits). */
+function rpcUrlCandidates(env: CustodialCacheRpcEnv): string[] {
+  const primary = String(env.SOLANA_RPC_URL || "").trim();
+  const fallbacks = [
+    "https://api.mainnet-beta.solana.com",
+    "https://solana-rpc.publicnode.com",
+    "https://rpc.ankr.com/solana",
+  ];
+  const out: string[] = [];
+  for (const u of [primary, ...fallbacks]) {
+    if (u && !out.includes(u)) out.push(u);
+  }
+  return out;
+}
+
 /**
  * Sum SPL raw amounts for `mint` across classic + Token-2022 program namespaces (matches sweep / cron discovery).
  */
@@ -121,18 +136,17 @@ export type CustodialCacheRefreshResult = {
   refreshed: boolean;
 };
 
-async function readLiveFromRpc(
-  env: CustodialCacheRpcEnv,
+async function readLiveOnce(
+  rpcUrl: string,
   mintStr: string,
   pkStr: string,
+  decimals: number,
 ): Promise<{
   rrtt: number | null;
   sol: number;
   solOk: boolean;
   tokenOk: boolean;
 }> {
-  const decimals = envDecimals(env);
-  const rpcUrl = String(env.SOLANA_RPC_URL || "").trim() || "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpcUrl, "confirmed");
   const mint = new PublicKey(mintStr);
   const custodialPk = new PublicKey(pkStr);
@@ -158,6 +172,35 @@ async function readLiveFromRpc(
   }
 
   return { rrtt, sol, solOk, tokenOk };
+}
+
+async function readLiveFromRpc(
+  env: CustodialCacheRpcEnv,
+  mintStr: string,
+  pkStr: string,
+): Promise<{
+  rrtt: number | null;
+  sol: number;
+  solOk: boolean;
+  tokenOk: boolean;
+}> {
+  const decimals = envDecimals(env);
+  let last: { rrtt: number | null; sol: number; solOk: boolean; tokenOk: boolean } = {
+    rrtt: null,
+    sol: 0,
+    solOk: false,
+    tokenOk: false,
+  };
+  for (const rpcUrl of rpcUrlCandidates(env)) {
+    try {
+      const r = await readLiveOnce(rpcUrl, mintStr, pkStr, decimals);
+      last = r;
+      if (r.solOk || r.tokenOk) return r;
+    } catch {
+      /* try next RPC */
+    }
+  }
+  return last;
 }
 
 /**

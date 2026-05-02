@@ -627,6 +627,13 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
 
   let custodial_balances_rpc_ok = false;
 
+  const rrttMintB58 = String(env.RRTT_MINT_BASE58 || "").trim() || null;
+
+  const rrttMintDecimals = Math.min(
+    9,
+    Math.max(0, Math.floor(Number(String(env.RRTT_DECIMALS || "9").trim()) || 9) || 0),
+  );
+
   try {
 
     const snap = await refreshCustodialOnchainCacheFromRpc(env, sess.accountId).catch(() => null);
@@ -710,6 +717,10 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
       custodial_sol_lamports_cached,
 
       custodial_balances_rpc_ok,
+
+      rrtt_mint_base58: rrttMintB58,
+
+      rrtt_mint_decimals: rrttMintDecimals,
 
       apps,
 

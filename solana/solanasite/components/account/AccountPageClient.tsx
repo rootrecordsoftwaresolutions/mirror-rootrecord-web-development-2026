@@ -39,6 +39,7 @@ import {
   rootrecordLogin,
   syncPortalLifetimeFromMe,
 } from '@/lib/rootrecordSession';
+import { fetchCustodialMainnetBalances, type CustodialChainBalances } from '@/lib/custodialMainnetBalances';
 
 type Phase = 'loading' | 'forms' | 'account';
 
@@ -241,6 +242,8 @@ export function AccountPageClient() {
   const [ledger, setLedger] = useState<RewardsLedgerPage | null>(null);
   const [ledgerErr, setLedgerErr] = useState('');
   const [ledgerLoadingMore, setLedgerLoadingMore] = useState(false);
+  /** Mainnet balances read in the browser (uses NEXT_PUBLIC_RPC_URL + public fallbacks) when `/v1/me` exposes mint. */
+  const [chainBal, setChainBal] = useState<CustodialChainBalances | null>(null);
   const hasApi = Boolean(getRootRecordApiBase());
 
   const applyStatus = (msg: string, kind: 'ok' | 'warn' | 'err' | '') => {
@@ -310,6 +313,29 @@ export function AccountPageClient() {
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [phase, hasApi, loadAccount]);
+
+  useEffect(() => {
+    if (phase !== 'account' || !me) {
+      setChainBal(null);
+      return;
+    }
+    const pk = custodialPubFromMe(me);
+    const mintRaw = me.rrtt_mint_base58;
+    const mint = typeof mintRaw === 'string' ? mintRaw.trim() : '';
+    const dRaw = me.rrtt_mint_decimals;
+    const dec = typeof dRaw === 'number' ? dRaw : Number(dRaw);
+    if (!pk || !mint || !Number.isFinite(dec)) {
+      setChainBal(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchCustodialMainnetBalances(pk, mint, Math.min(9, Math.max(0, Math.floor(dec)))).then((b) => {
+      if (!cancelled) setChainBal(b);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, me]);
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -557,9 +583,12 @@ export function AccountPageClient() {
   const connectedPk = publicKey?.toBase58() ?? '';
   const linkedMatchesConnected = Boolean(linkedPk && connectedPk && linkedPk === connectedPk);
   const custodialPk = custodialPubFromMe(me);
-  const solLamports = solCachedLamports(me);
+  const solLamportsApi = solCachedLamports(me);
+  const solLamports =
+    chainBal?.solOk === true && chainBal.lamports != null ? chainBal.lamports : solLamportsApi;
   const solSol = solLamports != null ? solLamports / 1e9 : null;
-  const onchainRrtt = earnOptionalInt(earn, 'custodial_onchain_rrtt');
+  const onchainRrttApi = earnOptionalInt(earn, 'custodial_onchain_rrtt');
+  const onchainRrtt = chainBal?.tokenOk === true ? (chainBal.rrttWhole ?? 0) : onchainRrttApi;
   const totalEarnUnits =
     earn != null && Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : null;
   const pendingUnits = earn != null ? numEarn(earn, 'custodial_pending_units') : null;
@@ -694,7 +723,8 @@ export function AccountPageClient() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Balances</CardTitle>
               <CardDescription className="text-muted-foreground">
-                Earn program totals and cached on-chain reads for your custodial wallet (Solana mainnet · Solscan).
+                Earn program totals and on-chain balances for your custodial wallet (API + direct mainnet read in this
+                browser when mint is configured — Solscan).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
