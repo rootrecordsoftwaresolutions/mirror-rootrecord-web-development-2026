@@ -1,0 +1,12 @@
+---
+description: Terse replies, no repetition, protect context (RootRecord)
+alwaysApply: true
+---
+
+# Assistant / chat efficiency
+
+- **Default terse.** Short answers; no preamble or restating what the user already said.
+- **No repetition:** no playback of deploy/push steps, prior summaries, or their own facts unless they ask for a recap.
+- **Net-new only:** each reply adds a decision, diff, result, or risk—or a one-line ack.
+- **Context:** avoid long lists and huge quoted output; prefer paths and pointers.
+- **On-chain / payouts:** never claim sent or landed without verifiable proof (sig, stats, explorer); otherwise say not verified.
