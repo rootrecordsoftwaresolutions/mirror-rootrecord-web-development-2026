@@ -72,7 +72,7 @@ export async function fetchPortalMe(token: string): Promise<{ ok: true; data: Po
   return { ok: true, data };
 }
 
-export type EarnSummary = { balance: number } & Record<string, unknown>;
+export type EarnSummary = { balance: number; balance_display?: number } & Record<string, unknown>;
 
 export async function fetchEarnSummary(token: string): Promise<EarnSummary | null> {
   const base = getRootRecordApiBase();

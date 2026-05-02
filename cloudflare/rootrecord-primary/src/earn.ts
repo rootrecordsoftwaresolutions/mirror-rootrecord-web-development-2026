@@ -195,13 +195,26 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
           custodial_pending_units + (onchainNum >= 0 ? onchainNum : 0);
       }
     }
-  } catch {
-    /* rr_earn_custodial_state may be missing */
+  } catch (e) {
+    const msg = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+    console.error("earnSummary custodial slice", msg);
   }
+
+  const hasCustodialSlice =
+    custodial_units_sent > 0 ||
+    custodial_balances_rpc_ok ||
+    (custodial_onchain_rrtt != null && Number.isFinite(Number(custodial_onchain_rrtt))) ||
+    custodial_pending_units < balance;
+  /** What users should see as “your RRTT total” after treasury→custodial: pending + SPL in hosted wallet (not lifetime ledger alone). */
+  const balance_display = Math.max(
+    0,
+    Math.floor(hasCustodialSlice ? custodial_sum_ledger_and_wallet_units : balance),
+  );
 
   return json(
     {
       balance,
+      balance_display,
       custodial_pending_units,
       custodial_units_sent,
       custodial_available_withdraw_units,
@@ -247,7 +260,8 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
           }
         : null,
     },
-    200
+    200,
+    { "Cache-Control": "private, no-store" },
   );
 }
 
