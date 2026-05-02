@@ -180,25 +180,13 @@ function RewardsProgramNote({ earn }: { earn: EarnSummary | null }) {
       </p>
     );
   }
-  const total = Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : 0;
-  const pending = numEarn(earn, 'custodial_pending_units');
-  const sent = numEarn(earn, 'custodial_units_sent');
-  const ledgerAllPending = total > 0 && pending === total && sent === 0;
-
   return (
     <div className="space-y-2">
-      {ledgerAllPending ? (
-        <p className="text-xs text-muted-foreground leading-relaxed border-l-2 border-amber-500/40 pl-3">
-          <span className="text-foreground font-medium">These figures can look wrong but are consistent:</span> your
-          total is still on the <em className="not-italic">earn ledger</em> (in-app rewards). Nothing is
-          &ldquo;available to withdraw&rdquo; until the treasury has transferred matching units to your custodial wallet
-          and the daily job has updated the cache. &ldquo;RRTT in custodial wallet&rdquo; stays — until that scan runs.
-          If it never changes, the Worker cron may be skipping (treasury env not set) or transfers may be failing —
-          check Worker logs for <span className="font-mono text-[11px]">rrtt custodial cron</span>. {learn}
-        </p>
-      ) : null}
       <p className="text-xs text-muted-foreground leading-relaxed">
-        Treasury sends RRTT to your custodial wallet on the daily schedule when enabled. {learn}
+        <span className="text-foreground font-medium">How to read this:</span> the earn ledger holds your credited
+        rewards; &ldquo;not yet in custodial wallet&rdquo; is what still has to show up as SPL on your custodial
+        address. Whatever is already in the custodial wallet is what you can treat as on-chain balance; withdraw uses
+        the smaller of that and what the ledger allows. {learn}
       </p>
     </div>
   );
@@ -585,12 +573,18 @@ export function AccountPageClient() {
   const custodialPk = custodialPubFromMe(me);
   const solLamportsApi = solCachedLamports(me);
   const solLamports =
-    chainBal?.solOk === true && chainBal.lamports != null ? chainBal.lamports : solLamportsApi;
+    chainBal?.solOk === true ? (chainBal.lamports ?? 0) : solLamportsApi != null ? solLamportsApi : null;
   const solSol = solLamports != null ? solLamports / 1e9 : null;
   const onchainRrttApi = earnOptionalInt(earn, 'custodial_onchain_rrtt');
   const onchainRrtt = chainBal?.tokenOk === true ? (chainBal.rrttWhole ?? 0) : onchainRrttApi;
   const totalEarnUnits =
     earn != null && Number.isFinite(Number(earn.balance)) ? Math.max(0, Math.floor(Number(earn.balance))) : null;
+  const sumLedgerWallet =
+    earn != null && 'custodial_sum_ledger_and_wallet_units' in earn
+      ? numEarn(earn, 'custodial_sum_ledger_and_wallet_units')
+      : totalEarnUnits != null
+        ? totalEarnUnits + (onchainRrtt ?? 0)
+        : null;
   const pendingUnits = earn != null ? numEarn(earn, 'custodial_pending_units') : null;
   const availWithdraw = earn != null ? numEarn(earn, 'custodial_available_withdraw_units') : null;
   const savedWithdrawDest =
@@ -723,28 +717,32 @@ export function AccountPageClient() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Balances</CardTitle>
               <CardDescription className="text-muted-foreground">
-                Earn program totals and on-chain balances for your custodial wallet (API + direct mainnet read in this
-                browser when mint is configured — Solscan).
+                Ledger (earn program) plus what Solana shows in your custodial wallet — API and, when mint is
+                configured, a direct mainnet read in this browser (Solscan).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <BalanceStat
-                  label="Total RRTT (earn)"
+                  label="Total RRTT (ledger + custodial)"
                   value={
-                    totalEarnUnits != null ? (
+                    sumLedgerWallet != null ? (
                       <>
-                        {totalEarnUnits.toLocaleString()}{' '}
+                        {sumLedgerWallet.toLocaleString()}{' '}
                         <span className="text-muted-foreground font-medium text-sm">RRTT</span>
                       </>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Lifetime units from the beta earn program."
+                  hint={
+                    totalEarnUnits != null && onchainRrtt != null
+                      ? `Earn ledger ${totalEarnUnits.toLocaleString()} + SPL in custodial wallet ${(onchainRrtt ?? 0).toLocaleString()} (same mint).`
+                      : 'Lifetime earn ledger plus RRTT SPL already in your custodial wallet.'
+                  }
                 />
                 <BalanceStat
-                  label="Pending to custodial"
+                  label="Not yet in custodial wallet"
                   value={
                     pendingUnits != null ? (
                       <span className={pendingUnits > 0 ? 'text-amber-200/95' : undefined}>
@@ -755,7 +753,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Not yet sent on-chain from treasury."
+                  hint="Ledger total minus what is already reflected in your custodial SPL balance (treasury sends close this gap)."
                 />
                 <BalanceStat
                   label="Available to withdraw"
@@ -769,7 +767,7 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Against custodial on-chain RRTT and ledger limits."
+                  hint="RRTT sitting in your custodial SPL account that you are allowed to move out (ledger + on-chain rules)."
                 />
                 <BalanceStat
                   label="RRTT in custodial wallet"
@@ -783,22 +781,18 @@ export function AccountPageClient() {
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint={
-                    pendingUnits != null && pendingUnits > 0 && onchainRrtt === 0
-                      ? 'Mainnet SPL balance for this mint. Stays 0 until the treasury sends matching units on-chain (pending above).'
-                      : 'Mainnet SPL balance for this mint; refreshed when you load the account (and periodically while signed in).'
-                  }
+                  hint="What Solana shows for this mint at your custodial address (API + browser mainnet read)."
                 />
                 <BalanceStat
                   label="SOL in custodial wallet"
                   value={
                     solSol != null ? (
-                      <>{solSol.toLocaleString(undefined, { maximumFractionDigits: 6 })} SOL</>
+                      <>{solSol.toLocaleString(undefined, { maximumFractionDigits: 9 })} SOL</>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )
                   }
-                  hint="Native SOL on the custodial pubkey; same refresh as RRTT (not your linked self-custody wallet)."
+                  hint="Native SOL on the custodial pubkey (rent + fees). Reads from the API and from this browser’s RPC when possible; if you see 0, Solscan for that address is the ground truth."
                 />
               </div>
               <RewardsProgramNote earn={earn} />

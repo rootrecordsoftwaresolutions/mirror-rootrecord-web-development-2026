@@ -157,6 +157,7 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
   let custodial_available_withdraw_units = 0;
   let custodial_onchain_rrtt: number | null = null;
   let custodial_balances_rpc_ok = false;
+  let custodial_sum_ledger_and_wallet_units = 0;
   try {
     const auth = request.headers.get("Authorization") || "";
     if (auth.toLowerCase().startsWith("bearer ") && env.JWT_SECRET) {
@@ -179,10 +180,20 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
         const onchain = snap != null ? snap.custodial_rrtt_onchain : onchainDb;
         if (snap != null) custodial_balances_rpc_ok = snap.rpc_ok;
         custodial_units_sent = sent;
-        custodial_pending_units = Math.max(0, balance - sent);
+        const onchainNum =
+          onchain != null && Number.isFinite(Number(onchain)) ? Math.max(0, Math.floor(Number(onchain))) : -1;
+        /** Pending = ledger total not yet “in wallet” on Solana (uses max of ledger-sent vs on-chain SPL so counters can’t lag). */
+        custodial_pending_units = Math.max(0, balance - Math.max(sent, onchainNum >= 0 ? onchainNum : 0));
         const availLedger = Math.max(0, sent - withdrawn);
-        custodial_available_withdraw_units = onchain != null ? Math.min(availLedger, onchain) : availLedger;
+        if (onchainNum >= 0) {
+          const ledgerCap = Math.max(0, sent - withdrawn);
+          const boostedCap = sent === 0 && onchainNum > 0 ? Math.max(ledgerCap, onchainNum) : ledgerCap;
+          custodial_available_withdraw_units = Math.min(onchainNum, Math.max(ledgerCap, boostedCap));
+        } else {
+          custodial_available_withdraw_units = availLedger;
+        }
         custodial_onchain_rrtt = onchain;
+        custodial_sum_ledger_and_wallet_units = balance + (onchainNum >= 0 ? onchainNum : 0);
       }
     }
   } catch {
@@ -197,6 +208,7 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
       custodial_available_withdraw_units,
       custodial_onchain_rrtt,
       custodial_balances_rpc_ok,
+      custodial_sum_ledger_and_wallet_units,
       total_rewards_units: balance,
       signup_bonus: {
         one_time_across_apps: true,
