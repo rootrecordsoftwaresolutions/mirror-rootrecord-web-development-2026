@@ -83,6 +83,7 @@ export const SEO_STATIC_PATHS: readonly string[] = [
   '/recent-tokens',
   '/token-stats',
   '/ecosystem',
+  '/tokenomics',
   '/bulk',
   '/my-actions',
   '/referrals',

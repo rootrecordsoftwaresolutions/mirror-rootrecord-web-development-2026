@@ -19,6 +19,22 @@ export const ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL =
 export const ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC =
   process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_USDC?.trim() || '';
 
+/**
+ * Raydium CPMM pool state — JUP / RRTT (Jupiter token quote).
+ * For ecosystem page Solscan links only; treasury-transfer auto-LP uses SOL/USDC pools above.
+ */
+export const ECOSYSTEM_SOLSCAN_CPMM_POOL_JUP_RRTT =
+  process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_JUP?.trim() ||
+  'HvEZGms9in7HerDEjfFh9Mwf4DncVeyiu3WNJ7UFJMuv';
+
+/**
+ * Raydium CPMM pool state — RAY / RRTT.
+ * For ecosystem page Solscan links only; treasury-transfer auto-LP uses SOL/USDC pools above.
+ */
+export const ECOSYSTEM_SOLSCAN_CPMM_POOL_RAY_RRTT =
+  process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_RAY?.trim() ||
+  'G9aR6NvZK794wo1tzfFnEP8j6THynSrB7UmuYDi4CuN3';
+
 /** @deprecated Alias for `ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL` (WSOL pair). */
 export const ECOSYSTEM_SOLSCAN_CPMM_POOL = ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL;
 

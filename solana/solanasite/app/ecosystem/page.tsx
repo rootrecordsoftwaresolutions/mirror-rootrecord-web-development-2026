@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -21,6 +22,8 @@ import {
   ECOSYSTEM_LISTING_SYMBOL,
   ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL,
   ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC,
+  ECOSYSTEM_SOLSCAN_CPMM_POOL_JUP_RRTT,
+  ECOSYSTEM_SOLSCAN_CPMM_POOL_RAY_RRTT,
   ECOSYSTEM_SOLSCAN_DEVELOPER,
   ECOSYSTEM_SOLSCAN_TREASURY,
   OTC_USD_PER_TOKEN,
@@ -643,6 +646,11 @@ export default function EcosystemPage() {
           <CardDescription className="text-base leading-relaxed">
             From the developer: economics, wallets, pool, and treasury transfers. Descriptive only —{' '}
             <strong className="text-foreground">not financial advice</strong>. Do your own research.
+            {' '}
+            <Link href="/tokenomics" className="text-sol-green hover:underline font-medium">
+              Tokenomics &amp; markets
+            </Link>{' '}
+            lists every surfaced pool plus a deeper tokenomics and market framing.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-8 leading-relaxed">
@@ -723,6 +731,41 @@ export default function EcosystemPage() {
                   </span>
                   {' — '}
                   Raydium CPMM where treasury USDC buys add paired liquidity.
+                </li>
+              ) : null}
+              {ECOSYSTEM_SOLSCAN_CPMM_POOL_JUP_RRTT ? (
+                <li>
+                  <a
+                    href={solscanAccount(ECOSYSTEM_SOLSCAN_CPMM_POOL_JUP_RRTT)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sol-green hover:underline font-medium"
+                  >
+                    Liquidity pool — Jupiter (JUP) / {ECOSYSTEM_LISTING_SYMBOL}
+                  </a>{' '}
+                  <span className="font-mono text-xs text-foreground/80">
+                    ({ECOSYSTEM_SOLSCAN_CPMM_POOL_JUP_RRTT})
+                  </span>
+                  {' — '}
+                  Raydium CPMM; swaps often route through Jupiter. Separate from treasury-transfer
+                  auto-deposit (SOL/USDC rails).
+                </li>
+              ) : null}
+              {ECOSYSTEM_SOLSCAN_CPMM_POOL_RAY_RRTT ? (
+                <li>
+                  <a
+                    href={solscanAccount(ECOSYSTEM_SOLSCAN_CPMM_POOL_RAY_RRTT)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sol-green hover:underline font-medium"
+                  >
+                    Liquidity pool — RAY / {ECOSYSTEM_LISTING_SYMBOL}
+                  </a>{' '}
+                  <span className="font-mono text-xs text-foreground/80">
+                    ({ECOSYSTEM_SOLSCAN_CPMM_POOL_RAY_RRTT})
+                  </span>
+                  {' — '}
+                  Raydium CPMM; separate from treasury-transfer auto-deposit (SOL/USDC rails).
                 </li>
               ) : null}
               <li>
@@ -841,8 +884,9 @@ export default function EcosystemPage() {
           <CardDescription className="leading-relaxed">
             <span className="block">Purchase tokens directly from the treasury.</span>
             <span className="block mt-1.5">
-              Both Raydium CPMM pools (SOL and USDC) are live—your payment is matched into the pool
-              for the asset you paid with.
+              Treasury transfers deposit into the Raydium CPMM pool that matches how you paid (WSOL
+              or USDC quote). Additional JUP/RAY pairs are live on Raydium for open-market swaps
+              (see Key terms).
             </span>
           </CardDescription>
         </CardHeader>
@@ -964,7 +1008,8 @@ export default function EcosystemPage() {
           ) : null}
           <div className="text-xs text-muted-foreground leading-relaxed max-w-2xl space-y-1">
             <p>
-              Transfers automatically deposit match of the same value into the USDC/SOL liquidity pool.
+              Transfers automatically deposit a match of the same value into the Raydium CPMM pool
+              for the quote you paid with (USDC/RRTT or SOL/RRTT), not the JUP or RAY pairs.
             </p>
             <p>
               Paying with USDC matches with USDC/RRTT. Paying with SOL matches with SOL/RRTT.

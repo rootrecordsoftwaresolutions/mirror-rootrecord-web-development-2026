@@ -27,6 +27,7 @@ const NAV = [
   { href: '/recent-tokens', label: 'New tokens' },
   { href: '/token-stats', label: 'Token Stats' },
   { href: '/ecosystem', label: 'Purpose' },
+  { href: '/tokenomics', label: 'Tokenomics' },
   { href: '/bulk', label: 'Bulk SOL' },
   { href: '/wallet-generator', label: 'Wallet Generator' },
   { href: '/my-actions', label: 'My Actions' },
@@ -46,6 +47,7 @@ export function Header() {
     (href === '/token-stats' && pathname.startsWith('/ref/')) ||
     (href === '/recent-tokens' && pathname.startsWith('/recent-tokens')) ||
     (href === '/ecosystem' && pathname.startsWith('/ecosystem')) ||
+    (href === '/tokenomics' && pathname.startsWith('/tokenomics')) ||
     (href === '/referrals' && pathname.startsWith('/referrals')) ||
     (href === '/start' && pathname.startsWith('/start')) ||
     (href === '/wallet-generator' && pathname.startsWith('/wallet-generator'));
