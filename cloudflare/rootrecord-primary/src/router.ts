@@ -163,6 +163,10 @@ export interface Env {
   MIN_APP_VERSION_BM?: string;
   PLAY_STORE_URL_WEATHER?: string;
   PLAY_STORE_URL_BM?: string;
+  MIN_APP_VERSION_TOKEN_MANAGER?: string;
+  MIN_APP_VERSION_ACCOUNT_HUB?: string;
+  PLAY_STORE_URL_TOKEN_MANAGER?: string;
+  PLAY_STORE_URL_ACCOUNT_HUB?: string;
 
   /** Bot token for `runDiscordDeveloperMessageSync` (`wrangler secret put DISCORD_BOT_TOKEN`). */
   DISCORD_BOT_TOKEN?: string;

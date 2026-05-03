@@ -45,10 +45,14 @@ MIN_APP_VERSION_WEATHER = "1.0.16"
 MIN_APP_VERSION_BM = "1.06"
 PLAY_STORE_URL_WEATHER = "https://play.google.com/store/apps/details?id=com.rootrecord.weathermanager"
 PLAY_STORE_URL_BM = "https://play.google.com/store/apps/details?id=com.rootrecord.businessmanager"
+MIN_APP_VERSION_TOKEN_MANAGER = "0.1.0"
+MIN_APP_VERSION_ACCOUNT_HUB = "0.1.1"
+PLAY_STORE_URL_TOKEN_MANAGER = "https://play.google.com/store/apps/details?id=com.rootrecord.tokenmanager"
+PLAY_STORE_URL_ACCOUNT_HUB = "https://play.google.com/store/apps/details?id=com.rootrecord.accounthub"
 # Developer feed (Settings → messages in mobile apps): GET /api/mobile/developer-messages?app_id=…
 # Publish (ops): POST https://api.rootrecord.info/api/internal/developer-messages
 #   Header: X-RR-Push-Admin-Key: <same as push-broadcast>
-#   JSON: { "title": "…", "body": "…", "app_scope": "all" | "weather" | "bm" | "token_manager" }
+#   JSON: { "title": "…", "body": "…", "app_scope": "all" | "weather" | "bm" | "token_manager" | "account_hub" }
 #
 # Discord → same feed (cron */15): Global Updates channel + `wrangler secret put DISCORD_BOT_TOKEN`.
 # Bot needs Message Content Intent + Read channel/history on that channel. Human posts only (bots skipped).

@@ -7,10 +7,11 @@ export interface DeveloperMessagesEnv {
 }
 
 /** Map RR_APP_ID-style string to a single scope bucket for filtering rows. */
-function scopeForAppId(appId: string): "weather" | "bm" | "token_manager" {
+function scopeForAppId(appId: string): "weather" | "bm" | "token_manager" | "account_hub" {
   const a = appId.toLowerCase();
   if (a.includes("business_manager")) return "bm";
   if (a.includes("token_manager")) return "token_manager";
+  if (a.includes("account_hub")) return "account_hub";
   if (a.includes("weather")) return "weather";
   return "weather";
 }
@@ -58,7 +59,7 @@ export async function handleDeveloperMessagesPost(request: Request, env: Develop
   const title = String(body.title || "").trim();
   const text = String(body.body || "").trim();
   const rawScope = String(body.app_scope || "all").trim().toLowerCase();
-  const app_scope = ["all", "weather", "bm", "token_manager"].includes(rawScope) ? rawScope : "all";
+  const app_scope = ["all", "weather", "bm", "token_manager", "account_hub"].includes(rawScope) ? rawScope : "all";
   if (!title || title.length > 200) return json({ detail: "title required (1–200 chars)." }, 400);
   if (!text || text.length > 8000) return json({ detail: "body required (1–8000 chars)." }, 400);
   const id = crypto.randomUUID();

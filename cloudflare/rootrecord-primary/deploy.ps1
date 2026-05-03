@@ -145,5 +145,16 @@ if ($discordFeedback -match '^https://discord(app)?\.com/api/webhooks/' -and $di
   Write-Host "Uploaded DISCORD_FEEDBACK_WEBHOOK_URL (from credentials.env)."
 }
 
+# Global Updates → in-app developer messages (Worker cron). Bot token from Portal → Bot → Reset Token.
+$discordBot = [string]$env:DISCORD_BOT_TOKEN
+$discordBot = $discordBot.Trim()
+if ($discordBot -match '^(?i)bot\s+') {
+  $discordBot = ($discordBot -replace '^(?i)bot\s+', '').Trim()
+}
+if ($discordBot.Length -ge 45 -and $discordBot.Contains(".")) {
+  $discordBot | npx wrangler secret put DISCORD_BOT_TOKEN
+  Write-Host "Uploaded DISCORD_BOT_TOKEN (Discord → developer_messages sync)."
+}
+
 npx wrangler d1 migrations apply root-record --remote
 npx wrangler deploy
