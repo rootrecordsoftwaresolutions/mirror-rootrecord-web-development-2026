@@ -15,9 +15,10 @@ export const ECOSYSTEM_SOLSCAN_CPMM_POOL_SOL =
   process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID?.trim() ||
   'CJPypGffPA7xf9rPy7HhuLQSx7FZUpYgrSXYMuiTHuJr';
 
-/** Raydium CPMM pool state — USDC quote leg; empty until configured. */
+/** Raydium CPMM pool state — USDC quote leg (mainnet default from on-chain Raydium CPMM listing). */
 export const ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC =
-  process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_USDC?.trim() || '';
+  process.env.NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_USDC?.trim() ||
+  'FDWS5gABvxMfPrBEqUREbBmwBsajKuzDhqJ4LVgSNWT3';
 
 /**
  * Raydium CPMM pool state — JUP / RRTT (Jupiter token quote).

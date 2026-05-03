@@ -39,6 +39,9 @@ export const metadata: Metadata = pageSeo({
   ],
 });
 
+/** Mainnet USDC/RRTT CPMM pool state (same default as `ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC`); inlined so this table always lists all four rails. */
+const TOKENOMICS_USDC_POOL_FALLBACK = 'FDWS5gABvxMfPrBEqUREbBmwBsajKuzDhqJ4LVgSNWT3';
+
 type PoolRow = {
   pair: string;
   poolId: string;
@@ -46,6 +49,8 @@ type PoolRow = {
 };
 
 function buildPoolRows(): PoolRow[] {
+  const usdcPoolId =
+    ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC.trim() || TOKENOMICS_USDC_POOL_FALLBACK;
   const rows: PoolRow[] = [
     {
       pair: 'SOL (WSOL) / RRTT',
@@ -53,15 +58,13 @@ function buildPoolRows(): PoolRow[] {
       role:
         'Raydium CPMM. Matched by the Treasury Transfer Tool when buyers pay in SOL: quote is routed into this pool after the configured treasury reserve.',
     },
-  ];
-  if (ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC.trim()) {
-    rows.push({
+    {
       pair: 'USDC / RRTT',
-      poolId: ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC.trim(),
+      poolId: usdcPoolId,
       role:
         'Raydium CPMM. Matched when buyers pay in USDC: quote is routed into this pool after the same reserve logic.',
-    });
-  }
+    },
+  ];
   if (ECOSYSTEM_SOLSCAN_CPMM_POOL_JUP_RRTT.trim()) {
     rows.push({
       pair: 'JUP / RRTT',
@@ -83,7 +86,6 @@ function buildPoolRows(): PoolRow[] {
 
 export default function TokenomicsPage() {
   const poolRows = buildPoolRows();
-  const usdcConfigured = Boolean(ECOSYSTEM_SOLSCAN_CPMM_POOL_USDC.trim());
 
   return (
     <div className="container py-14 md:py-20 max-w-4xl space-y-12">
@@ -130,6 +132,8 @@ export default function TokenomicsPage() {
           <CardDescription className="leading-relaxed text-base">
             Pool id is the Raydium <strong className="text-foreground">pool state</strong> account
             (what explorers label as the pool), not the SPL mint address for {ECOSYSTEM_LISTING_SYMBOL}.
+            The table lists <strong className="text-foreground">SOL, USDC, JUP, and RAY</strong> quote
+            pairs against {ECOSYSTEM_LISTING_SYMBOL} on mainnet.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -162,14 +166,12 @@ export default function TokenomicsPage() {
               </tbody>
             </table>
           </div>
-          {!usdcConfigured ? (
-            <p className="text-xs text-muted-foreground border-t border-border/60 pt-4">
-              The USDC / {ECOSYSTEM_LISTING_SYMBOL} row appears here automatically when{' '}
-              <span className="font-mono">NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_USDC</span> is set
-              in deployment config. Until then, treasury USDC rails may still be wired server-side
-              only — check operator envs and worker behavior separately from this page.
-            </p>
-          ) : null}
+          <p className="text-xs text-muted-foreground border-t border-border/60 pt-4">
+            For a custom or non-mainnet USDC pool, set{' '}
+            <span className="font-mono">NEXT_PUBLIC_ECOSYSTEM_OTC_CPMM_POOL_ID_USDC</span> (and server{' '}
+            <span className="font-mono">ECOSYSTEM_OTC_CPMM_POOL_ID_USDC</span> for treasury auto-LP).
+            Treasury Worker envs are independent of this page—verify they match the pool you operate.
+          </p>
           <p className="text-xs text-muted-foreground">
             Trade or add liquidity through{' '}
             <a
