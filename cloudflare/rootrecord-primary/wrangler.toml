@@ -45,6 +45,10 @@ MIN_APP_VERSION_WEATHER = "1.0.16"
 MIN_APP_VERSION_BM = "1.06"
 PLAY_STORE_URL_WEATHER = "https://play.google.com/store/apps/details?id=com.rootrecord.weathermanager"
 PLAY_STORE_URL_BM = "https://play.google.com/store/apps/details?id=com.rootrecord.businessmanager"
+# Developer feed (Settings → messages in mobile apps): GET /api/mobile/developer-messages?app_id=…
+# Publish (ops): POST https://api.rootrecord.info/api/internal/developer-messages
+#   Header: X-RR-Push-Admin-Key: <same as push-broadcast>
+#   JSON: { "title": "…", "body": "…", "app_scope": "all" | "weather" | "bm" | "token_manager" }
 
 # Internal custodial wallet encryption (AES-256-GCM). deploy.ps1 uploads INTERNAL_WALLET_ENC_KEY_B64
 # Failsafe: application code never DELETEs `internal_solana_wallets` (encrypted keys) — even on DELETE /v1/me / inactive purge.

@@ -35,6 +35,7 @@ import { handleSolanaLinkedWalletRoute } from "./solana-linked-wallet";
 import { handleCustodialRrttWithdrawV1 } from "./custodial-rrtt-withdraw";
 import { readRecentHttpErrorEvents } from "./observability";
 import { handleMobileVersionPolicy } from "./mobile-client-version";
+import { handleDeveloperMessagesGet, handleDeveloperMessagesPost } from "./developer-messages";
 
 import {
 
@@ -648,6 +649,14 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   if (method === "GET" && sub === "/mobile/version-policy") {
     return handleMobileVersionPolicy(request, env);
+  }
+
+  if (method === "GET" && sub === "/mobile/developer-messages") {
+    return handleDeveloperMessagesGet(env, url);
+  }
+
+  if (method === "POST" && sub === "/internal/developer-messages") {
+    return handleDeveloperMessagesPost(request, env);
   }
 
   if (method === "POST" && sub === "/auth/login") {
