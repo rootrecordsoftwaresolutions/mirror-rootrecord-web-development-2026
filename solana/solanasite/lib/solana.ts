@@ -36,6 +36,10 @@ import {
   appendReferralMemoToTransaction,
   eligibleReferrerForPayer,
 } from '@/lib/referralMemo';
+import {
+  ECOSYSTEM_SOLSCAN_DEVELOPER,
+  ECOSYSTEM_SOLSCAN_TREASURY,
+} from '@/lib/ecosystemOtcConstants';
 
 export const SOLANA_NETWORK = (process.env.NEXT_PUBLIC_SOLANA_NETWORK ||
   'mainnet-beta') as Cluster;
@@ -121,8 +125,13 @@ function getFeeWallet(): PublicKey | null {
   if (FEE_WALLET_PLACEHOLDERS.has(trimmed)) {
     return null;
   }
+  /** If deploy mistakenly sets fee wallet to the documented ops/dev address, send fees to treasury instead. */
+  const devStr = ECOSYSTEM_SOLSCAN_DEVELOPER.trim();
+  const treasuryStr = ECOSYSTEM_SOLSCAN_TREASURY.trim();
+  const useStr =
+    treasuryStr.length > 0 && trimmed === devStr ? treasuryStr : trimmed;
   try {
-    return new PublicKey(trimmed);
+    return new PublicKey(useStr);
   } catch {
     return null;
   }

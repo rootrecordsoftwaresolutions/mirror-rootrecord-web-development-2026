@@ -996,6 +996,14 @@ export function AccountPageClient() {
                 />
               </div>
               <RewardsProgramNote earn={earn} />
+              <p className="text-xs text-muted-foreground border-t border-border/60 pt-3 leading-relaxed">
+                <strong className="text-foreground">Automated settlement (UTC):</strong> Once per day at{' '}
+                <strong className="text-foreground">07:00 UTC</strong>, RootRecord&apos;s backend tries to move
+                owed RRTT from your rewards ledger into this hosted wallet and to top up a small SOL reserve when
+                it is below threshold (for fees). Until that job succeeds on-chain, RRTT can show as still settling.
+                Treasury balance, RPC health, or account state can delay a payout; the schedule is daily, not
+                per-event.
+              </p>
             </CardContent>
           </Card>
 
@@ -1004,7 +1012,8 @@ export function AccountPageClient() {
               <CardTitle className="text-lg">Hosted reward wallet</CardTitle>
               <CardDescription className="text-muted-foreground">
                 A wallet RootRecord holds for you so test rewards (RRTT) can land in one place. You still control
-                cash-outs to your own address.
+                cash-outs to your own address. Incoming RRTT and SOL reserve top-ups follow the daily 07:00 UTC job
+                described under Balances.
               </CardDescription>
             </CardHeader>
             <CardContent>

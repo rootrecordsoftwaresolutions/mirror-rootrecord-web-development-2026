@@ -316,6 +316,33 @@ export default function TokenomicsPage() {
               split where applicable.
             </p>
           </section>
+
+          <section className="space-y-3" id="custodial-settlement">
+            <h2 className="text-base font-semibold text-foreground">
+              Earn rewards → hosted wallet (daily UTC)
+            </h2>
+            <p>
+              Beta / earn-program credits for {ECOSYSTEM_LISTING_SYMBOL} are reconciled into{' '}
+              <strong className="text-foreground">hosted custodial wallets</strong> on Solana by a
+              scheduled job on RootRecord&apos;s API Worker: it runs{' '}
+              <strong className="text-foreground">once per calendar day at 07:00 UTC</strong> (cron{' '}
+              <code className="text-xs font-mono text-foreground/90">0 7 * * *</code>
+              ). In that pass the treasury keypair, when configured, can send owed whole-token units
+              to each custodial SPL account and add SOL lamports when the custodial account is below
+              the internal reserve floor—so network fees for operator-sponsored flows remain viable.
+            </p>
+            <p>
+              That timing is <strong className="text-foreground">not</strong> the same as app
+              session accounting: you may see &quot;still settling&quot; in{' '}
+              <Link href="/account" className="text-sol-green hover:underline">
+                Account
+              </Link>{' '}
+              until the next successful on-chain batch. Failures (RPC, treasury balance, account
+              state) can skip or defer an individual payout until a later run. The same automation
+              can be invoked manually by operators for maintenance; the public routine remains
+              07:00 UTC unless infra config changes.
+            </p>
+          </section>
         </CardContent>
       </Card>
 
