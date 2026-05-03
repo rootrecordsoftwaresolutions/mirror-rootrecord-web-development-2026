@@ -5,6 +5,7 @@ import { handleRequest } from "./router";
 import { runInactiveAccountCleanupCron } from "./inactive-account-cron";
 import { runNoaaAlertCron } from "./noaa-alert-cron";
 import { runRrttCustodialPayoutCron } from "./solana-internal-wallet";
+import { runDiscordDeveloperMessageSync } from "./discord-developer-sync";
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -49,6 +50,12 @@ export default {
     if (c === "45 8 * * *") {
       await runInactiveAccountCleanupCron(env);
       await pruneWorkerHttpErrorEvents(env.DB).catch((e) => console.error("observability prune", String(e)));
+      return;
+    }
+    if (c === "*/15 * * * *") {
+      await runDiscordDeveloperMessageSync(env).catch((e) =>
+        console.error("discord developer sync", e instanceof Error ? e.message : String(e)),
+      );
       return;
     }
     await runNoaaAlertCron(env);

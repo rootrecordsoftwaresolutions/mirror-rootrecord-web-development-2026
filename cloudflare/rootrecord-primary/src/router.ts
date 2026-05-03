@@ -164,6 +164,17 @@ export interface Env {
   PLAY_STORE_URL_WEATHER?: string;
   PLAY_STORE_URL_BM?: string;
 
+  /** Bot token for `runDiscordDeveloperMessageSync` (`wrangler secret put DISCORD_BOT_TOKEN`). */
+  DISCORD_BOT_TOKEN?: string;
+  /** Guild channel ID to mirror into in-app developer messages (plain var). */
+  DISCORD_ANNOUNCEMENTS_CHANNEL_ID?: string;
+  /** Developer Portal application id (wrangler `[vars]`; optional for interactions later). */
+  DISCORD_APPLICATION_ID?: string;
+  /** Interactions signature verify key from Portal (hex); not used by dev-message cron. */
+  DISCORD_PUBLIC_KEY?: string;
+  /** Discord server (guild) id for documentation / future use. */
+  DISCORD_GUILD_ID?: string;
+
 }
 
 /** Collapse repeated slashes (`//v1/...`) and strip trailing slash so route tables match. */

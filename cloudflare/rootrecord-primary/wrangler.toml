@@ -10,8 +10,8 @@ compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-# NOAA push cadence + daily RRTT treasury → custodial sweep (07:00 UTC) + inactive-account purge (08:45 UTC).
-crons = ["*/5 * * * *", "0 7 * * *", "45 8 * * *"]
+# NOAA push cadence + daily RRTT treasury → custodial sweep (07:00 UTC) + inactive-account purge (08:45 UTC) + Discord → dev messages (15m).
+crons = ["*/5 * * * *", "0 7 * * *", "45 8 * * *", "*/15 * * * *"]
 
 [[d1_databases]]
 binding = "DB"
@@ -49,6 +49,15 @@ PLAY_STORE_URL_BM = "https://play.google.com/store/apps/details?id=com.rootrecor
 # Publish (ops): POST https://api.rootrecord.info/api/internal/developer-messages
 #   Header: X-RR-Push-Admin-Key: <same as push-broadcast>
 #   JSON: { "title": "…", "body": "…", "app_scope": "all" | "weather" | "bm" | "token_manager" }
+#
+# Discord → same feed (cron */15): Global Updates channel + `wrangler secret put DISCORD_BOT_TOKEN`.
+# Bot needs Message Content Intent + Read channel/history on that channel. Human posts only (bots skipped).
+# URL: https://discord.com/channels/1497039564345442406/1500286864119038103 (channel id is the last segment).
+DISCORD_ANNOUNCEMENTS_CHANNEL_ID = "1500286864119038103"
+# Developer Portal → General Information (not required for channel sync; documented for ops / future interactions).
+DISCORD_APPLICATION_ID = "1500289560343740566"
+DISCORD_PUBLIC_KEY = "7c708f3b7e1712bb90017ced01ec2d96304063d97c2faf6f18ef8da935c2da15"
+DISCORD_GUILD_ID = "1497039564345442406"
 
 # Internal custodial wallet encryption (AES-256-GCM). deploy.ps1 uploads INTERNAL_WALLET_ENC_KEY_B64
 # Failsafe: application code never DELETEs `internal_solana_wallets` (encrypted keys) — even on DELETE /v1/me / inactive purge.
