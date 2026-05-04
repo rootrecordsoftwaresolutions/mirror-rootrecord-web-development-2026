@@ -1,9 +1,12 @@
+import type { D1Database } from "@cloudflare/workers-types";
+
 import { json } from "./cors";
 import { notifySolanaToolsDiscord } from "./discord-solana-notify";
 
 export type SolanaSiteLogEnv = {
   SOLANA_SITE_LOG_SECRET?: string;
   DISCORD_WEBHOOK_SOLANA_TOOLS?: string;
+  DB: D1Database;
 };
 
 const MAX_ACTION_LEN = 96;
@@ -48,6 +51,42 @@ function truncateJson(obj: Record<string, unknown>, max: number): string {
     return s.length <= max ? s : s.slice(0, max) + "…";
   } catch {
     return "{}";
+  }
+}
+
+const TOKEN_CREATE_ACTION = "token_create";
+
+async function persistTokenCreateRow(
+  db: D1Database,
+  wallet: string,
+  network: string | undefined,
+  signature: string | undefined,
+  metadata: Record<string, unknown> | undefined
+): Promise<void> {
+  if (!metadata) return;
+  const mint = String(metadata.mint || "").trim();
+  if (!looksLikeSolanaPubkey(mint)) return;
+
+  const nameRaw = metadata.name != null ? String(metadata.name).trim() : "";
+  const name = nameRaw ? nameRaw.slice(0, 256) : null;
+
+  const symbolRaw = metadata.symbol != null ? String(metadata.symbol).trim() : "";
+  const symbol = symbolRaw ? symbolRaw.slice(0, 64) : null;
+
+  const token2022 = Boolean(metadata.token2022) ? 1 : 0;
+  const net = network ? network.trim().slice(0, 32) : null;
+  const sig = signature ? signature.trim().slice(0, MAX_SIG_LEN) : null;
+
+  try {
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO solana_site_token_create (wallet, mint, name, symbol, token2022, signature, network, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      )
+      .bind(wallet, mint, name, symbol, token2022, sig, net)
+      .run();
+  } catch {
+    /* table missing pre-migration or bind error — do not fail logging */
   }
 }
 
@@ -113,6 +152,10 @@ export async function handleSolanaSiteLogRoute(
 
   const md = siteLogMarkdown({ wallet, action, network, route, signature, metadata });
   await notifySolanaToolsDiscord(env.DISCORD_WEBHOOK_SOLANA_TOOLS, md);
+
+  if (action === TOKEN_CREATE_ACTION && metadata) {
+    await persistTokenCreateRow(env.DB, wallet, network, signature, metadata);
+  }
 
   return json({ ok: true }, 201);
 }
