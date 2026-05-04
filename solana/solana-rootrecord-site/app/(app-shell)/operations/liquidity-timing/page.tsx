@@ -11,9 +11,9 @@ import {
 
 export default function LiquidityTimingPage() {
   return (
-    <div className="container py-14 md:py-20 max-w-3xl space-y-10">
+    <div className="space-y-10">
       <header className="space-y-3">
-        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Operations</div>
+        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Automation</div>
         <h1 className="font-display text-4xl md:text-5xl tracking-tight">Liquidity timing</h1>
         <p className="text-muted-foreground leading-relaxed max-w-2xl">
           RootRecord keeps treasury Raydium CPMM positions within configured floors using a{' '}
@@ -167,7 +167,7 @@ export default function LiquidityTimingPage() {
           </p>
           <p>
             For pool addresses and reserve accounting context, see{' '}
-            <Link href="/tokenomics" className="text-sol-green hover:underline">
+            <Link href="/operations/tokenomics" className="text-sol-green hover:underline">
               Tokenomics
             </Link>
             .

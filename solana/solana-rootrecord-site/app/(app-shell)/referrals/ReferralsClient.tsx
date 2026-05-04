@@ -34,7 +34,7 @@ const PATH_PRESETS: { label: string; path: string; hint?: string }[] = [
   { label: 'Pricing', path: '/pricing' },
   { label: 'New tokens', path: '/recent-tokens' },
   { label: 'Token stats', path: '/token-stats' },
-  { label: 'Docs', path: '/docs' },
+  { label: 'Operations', path: '/operations' },
 ];
 
 export function ReferralsClient() {
@@ -98,8 +98,8 @@ export function ReferralsClient() {
         <span className="font-mono text-xs">{REFERRAL_MEMO_PREFIX}</span>…) is still
         included for explorers and analytics.{' '}
         See{' '}
-        <Link href="/docs" className="text-sol-green hover:underline">
-          Docs
+        <Link href="/operations/docs" className="text-sol-green hover:underline">
+          Documentation
         </Link>
         .
       </p>

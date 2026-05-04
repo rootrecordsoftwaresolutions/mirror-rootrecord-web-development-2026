@@ -43,7 +43,7 @@ export const DASHBOARD_SHELL_NAV: ShellNavGroup[] = [
       { href: '/contracts/vesting', label: 'Vesting' },
       { href: '/referrals', label: 'Referrals' },
       { href: '/pricing', label: 'Pricing' },
-      { href: '/docs', label: 'Docs' },
+      { href: '/operations', label: 'Operations' },
     ],
   },
   {

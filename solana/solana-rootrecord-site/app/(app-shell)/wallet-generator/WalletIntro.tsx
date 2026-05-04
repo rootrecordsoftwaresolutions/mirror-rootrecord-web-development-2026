@@ -30,7 +30,11 @@ export function WalletIntro() {
           RootRecord Solana Tools
         </Link>
         — see also <Link href="/create" className="text-sol-green underline-offset-4 hover:underline">Create token</Link>{' '}
-        and <Link href="/docs" className="text-sol-green underline-offset-4 hover:underline">Docs</Link>.
+        and{' '}
+        <Link href="/operations/docs" className="text-sol-green underline-offset-4 hover:underline">
+          Documentation
+        </Link>
+        .
       </p>
     </section>
   );

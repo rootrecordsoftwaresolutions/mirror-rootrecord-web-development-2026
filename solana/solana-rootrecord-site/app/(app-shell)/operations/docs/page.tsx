@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { pageSeo, SEO_KEYWORDS } from '@/lib/seo';
 
 export const metadata: Metadata = pageSeo({
-  path: '/docs',
+  path: '/operations/docs',
   title: 'Documentation',
   description:
     'How to connect a wallet, create SPL or Token-2022 tokens, use Token-2022 extensions, Pinata IPFS metadata, Raydium liquidity tools, referrals, and fee configuration on RootRecord Solana Tools.',
@@ -242,7 +242,7 @@ const SECTIONS: { n: string; title: string; body: ReactNode }[] = [
             beta tester rewards
           </a>{' '}
           page on rootrecord.info and the{' '}
-          <Link href="/tokenomics" className="text-sol-green hover:underline">
+          <Link href="/operations/tokenomics" className="text-sol-green hover:underline">
             Tokenomics &amp; markets
           </Link>{' '}
           page here.
@@ -254,10 +254,10 @@ const SECTIONS: { n: string; title: string; body: ReactNode }[] = [
 
 export default function DocsPage() {
   return (
-    <div className="container py-14 md:py-20">
+    <div>
       <div className="max-w-3xl">
         <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">
-          Docs
+          Documentation
         </div>
         <h1 className="font-display text-4xl md:text-6xl tracking-tight">
           How RootRecord works, in <em className="italic text-sol-green">plain language</em>.

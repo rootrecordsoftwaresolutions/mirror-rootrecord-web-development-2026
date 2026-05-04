@@ -39,7 +39,7 @@ function ExplorerLink({ href, label }: { href: string; label: string }) {
 
 export default function EcosystemPage() {
   return (
-    <div className="container py-14 md:py-20 max-w-3xl space-y-10">
+    <div className="space-y-10">
       <header className="space-y-3">
         <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Program</div>
         <h1 className="font-display text-4xl md:text-5xl tracking-tight">Ecosystem</h1>
@@ -77,13 +77,13 @@ export default function EcosystemPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
-            <Link href="/liquidity-timing" className="text-sol-green hover:underline font-medium">
+            <Link href="/operations/liquidity-timing" className="text-sol-green hover:underline font-medium">
               Liquidity timing
             </Link>{' '}
             — UTC schedule for treasury Raydium maintenance and SPL floor checks.
-          </p>
-          <p>
-            <Link href="/tokenomics" className="text-sol-green hover:underline font-medium">
+            </p>
+            <p>
+            <Link href="/operations/tokenomics" className="text-sol-green hover:underline font-medium">
               Tokenomics
             </Link>{' '}
             — supply, accounting ratio, and pool context for {ECOSYSTEM_LISTING_SYMBOL}.

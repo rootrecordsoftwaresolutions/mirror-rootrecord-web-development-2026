@@ -161,9 +161,9 @@ const PROGRAM_CARDS: LinkCard[] = [
   },
   {
     type: 'link',
-    href: '/docs',
-    title: 'Docs',
-    desc: 'Technical notes, env setup, and how flows map to on-chain programs.',
+    href: '/operations',
+    title: 'Operations wiki',
+    desc: 'Documentation, tokenomics, liquidity automation, and on-chain account links.',
     icon: BookOpen,
     tone: 'green',
   },

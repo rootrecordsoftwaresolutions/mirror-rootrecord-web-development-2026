@@ -263,7 +263,7 @@ export default function ContractsPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           <Button asChild variant="purple">
-            <Link href="/docs">Read the docs</Link>
+            <Link href="/operations/docs">Read the docs</Link>
           </Button>
           <Button asChild variant="outline">
             <Link href="/pricing">See pricing</Link>

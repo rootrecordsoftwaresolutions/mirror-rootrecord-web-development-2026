@@ -4,6 +4,10 @@ const nextConfig = {
   async redirects() {
     return [
       { source: '/start', destination: '/dashboard', permanent: true },
+      { source: '/docs', destination: '/operations/docs', permanent: true },
+      { source: '/ecosystem', destination: '/operations/ecosystem', permanent: true },
+      { source: '/liquidity-timing', destination: '/operations/liquidity-timing', permanent: true },
+      { source: '/tokenomics', destination: '/operations/tokenomics', permanent: true },
     ];
   },
   webpack: (config) => {

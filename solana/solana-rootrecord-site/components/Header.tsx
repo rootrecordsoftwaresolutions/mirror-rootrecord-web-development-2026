@@ -26,13 +26,12 @@ const NAV = [
   { href: '/contracts', label: 'Contracts' },
   { href: '/recent-tokens', label: 'New tokens' },
   { href: '/token-stats', label: 'Token Stats' },
-  { href: '/ecosystem', label: 'Ecosystem' },
+  { href: '/operations', label: 'Operations' },
   { href: '/bulk', label: 'Bulk SOL' },
   { href: '/wallet-generator', label: 'Wallet Generator' },
   { href: '/my-actions', label: 'My Actions' },
   { href: '/referrals', label: 'Referrals' },
   { href: '/pricing', label: 'Pricing' },
-  { href: '/docs', label: 'Docs' },
 ];
 
 export function Header() {
@@ -48,7 +47,8 @@ export function Header() {
     (href === '/referrals' && pathname.startsWith('/referrals')) ||
     (href === '/dashboard' && pathname.startsWith('/dashboard')) ||
     (href === '/wallet-generator' && pathname.startsWith('/wallet-generator')) ||
-    (href === '/ecosystem' && pathname.startsWith('/ecosystem'));
+    (href === '/operations' &&
+      (pathname === '/operations' || pathname.startsWith('/operations/')));
 
   return (
     <header

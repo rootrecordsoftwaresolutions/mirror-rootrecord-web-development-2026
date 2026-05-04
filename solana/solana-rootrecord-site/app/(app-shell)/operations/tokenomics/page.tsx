@@ -34,7 +34,7 @@ import {
 import { pageSeo, SEO_KEYWORDS } from '@/lib/seo';
 
 export const metadata: Metadata = pageSeo({
-  path: '/tokenomics',
+  path: '/operations/tokenomics',
   title: `Tokenomics & markets — ${ECOSYSTEM_LISTING_SYMBOL}`,
   description: `${ECOSYSTEM_LISTING_NAME} (${ECOSYSTEM_LISTING_SYMBOL}): Raydium CPMM pool addresses, treasury mechanics, Jupiter reference pricing, multi-pool context on Solana — descriptive, not investment advice.`,
   keywords: [
@@ -108,7 +108,7 @@ export default async function TokenomicsPage() {
   const otcRefLabel = formatOtcUsdPerWholeToken(otcRefUsd);
 
   return (
-    <div className="container py-14 md:py-20 max-w-4xl space-y-12">
+    <div className="space-y-12">
       <header className="space-y-4">
         <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
           Pools · tokenomics · markets
@@ -135,7 +135,7 @@ export default async function TokenomicsPage() {
         </p>
         <p className="text-sm text-muted-foreground">
           For the UTC schedule of treasury Raydium maintenance (native SOL and RRTT/RRESERVE floors), see{' '}
-          <Link href="/liquidity-timing" className="text-sol-green hover:underline font-medium">
+          <Link href="/operations/liquidity-timing" className="text-sol-green hover:underline font-medium">
             Liquidity timing
           </Link>
           . For a shareable mint dashboard, see{' '}
@@ -195,7 +195,7 @@ export default async function TokenomicsPage() {
             maintenance pool ids for automation live on the treasury Workers (
             <span className="font-mono">TREASURY_SOL_CP_POOL_ID</span>,{' '}
             <span className="font-mono">TREASURY_CP_MM_POOL_ID</span>)—see{' '}
-            <Link href="/liquidity-timing" className="text-sol-green hover:underline">
+            <Link href="/operations/liquidity-timing" className="text-sol-green hover:underline">
               Liquidity timing
             </Link>
             .
@@ -371,7 +371,7 @@ export default async function TokenomicsPage() {
             <p>
               Scheduled Raydium maintenance for the earn treasury (native SOL floor and RRTT/RRESERVE
               SPL floors) runs on a fixed UTC cadence described on{' '}
-              <Link href="/liquidity-timing" className="text-sol-green hover:underline">
+              <Link href="/operations/liquidity-timing" className="text-sol-green hover:underline">
                 Liquidity timing
               </Link>
               . It is separate from the daily custodial settlement cron summarized below.

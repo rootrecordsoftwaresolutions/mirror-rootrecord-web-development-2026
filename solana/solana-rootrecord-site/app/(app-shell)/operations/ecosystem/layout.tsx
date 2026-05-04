@@ -8,7 +8,7 @@ import {
 import { pageSeo, SEO_KEYWORDS } from '@/lib/seo';
 
 export const metadata: Metadata = pageSeo({
-  path: '/ecosystem',
+  path: '/operations/ecosystem',
   title: `Ecosystem — ${ECOSYSTEM_LISTING_SYMBOL}`,
   description: `${ECOSYSTEM_LISTING_NAME} (${ECOSYSTEM_LISTING_SYMBOL}): treasury balance context, Raydium CPMM pool links, and how RootRecord ties listing liquidity to on-chain operations.`,
   keywords: [

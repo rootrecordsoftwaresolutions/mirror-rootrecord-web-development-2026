@@ -99,7 +99,7 @@ export function StartHereMerged() {
             <Link href="/pricing">See pricing</Link>
           </Button>
           <Button asChild size="lg" variant="ghost">
-            <Link href="/docs" className="inline-flex items-center gap-2">
+            <Link href="/operations/docs" className="inline-flex items-center gap-2">
               <BookOpen className="h-4 w-4" />
               Full docs
             </Link>
@@ -202,7 +202,7 @@ export function StartHereMerged() {
       <p className="text-center text-sm text-muted-foreground">
         Not financial advice. Tokens can be worthless or illiquid. If something errors, read the message,
         check your balance, and try again — or open{' '}
-        <Link href="/docs" className="text-sol-green hover:underline">
+        <Link href="/operations/docs" className="text-sol-green hover:underline">
           Docs
         </Link>{' '}
         for detail.

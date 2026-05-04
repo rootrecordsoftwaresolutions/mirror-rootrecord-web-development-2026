@@ -36,7 +36,7 @@ export function LinearVestingClient() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           <Button asChild variant="purple">
-            <Link href="/docs">
+            <Link href="/operations/docs">
               Read how it will work
               <ArrowRight className="h-4 w-4 ml-2" />
             </Link>

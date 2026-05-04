@@ -23,6 +23,8 @@ import { cn } from '@/lib/utils';
 
 function routeActive(pathname: string, href: string): boolean {
   if (href === '/dashboard') return pathname === '/dashboard';
+  if (href === '/operations')
+    return pathname === '/operations' || pathname.startsWith('/operations/');
   if (pathname === href) return true;
   if (href !== '/' && pathname.startsWith(`${href}/`)) return true;
   return false;
