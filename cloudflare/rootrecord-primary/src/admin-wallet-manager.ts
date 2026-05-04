@@ -18,7 +18,7 @@ type LinkedRow = {
 };
 
 export async function handleWalletManagerRoutes(
-  _request: Request,
+  request: Request,
   env: WalletManagerEnv,
   sub: string,
   method: string
