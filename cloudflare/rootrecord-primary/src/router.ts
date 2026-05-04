@@ -24,6 +24,7 @@ import {
   handleCustodialWithdrawDestV1,
   handleRunRrttCustodialCronRoute,
   handleSolanaInternalWalletRoutes,
+  handleSweepCustodialSolAllRoute,
   provisionCustodialWalletIfMissing,
 } from "./solana-internal-wallet";
 import { handleSolanaSiteLogRoute } from "./solana-site-log";
@@ -969,6 +970,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const rrttCronRes = await handleRunRrttCustodialCronRoute(request, env, sub, method);
 
   if (rrttCronRes) return rrttCronRes;
+
+  const sweepCustodialSolRes = await handleSweepCustodialSolAllRoute(request, env, sub, method);
+
+  if (sweepCustodialSolRes) return sweepCustodialSolRes;
 
   const pushRes = await handlePushRoutes(request, env, sub, method);
 

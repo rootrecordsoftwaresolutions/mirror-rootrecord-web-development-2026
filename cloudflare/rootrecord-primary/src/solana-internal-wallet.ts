@@ -1095,3 +1095,244 @@ export async function handleRunRrttCustodialCronRoute(
     return json({ ok: false, detail: m }, 500);
   }
 }
+
+export type SweepCustodialSolRowResult = {
+  account_id: string;
+  pubkey: string;
+  balance_lamports_before: number;
+  min_rent_lamports: number;
+  lamports_sent: string;
+  signature?: string;
+  skipped?: string;
+  error?: string;
+};
+
+/**
+ * POST `/api/internal/sweep-custodial-sol-all` — operator only (`X-RR-Push-Admin-Key`).
+ * Sends **native SOL** from every `internal_solana_wallets` row to `destination`, leaving each
+ * custodial account **rent-exempt** (minimum balance for a 0-byte system account). Treasury pays
+ * network fees (`RRTT_TREASURY_SECRET_KEY_B58` must be set and funded).
+ *
+ * Body: `{ destination: string, dry_run?: boolean }`
+ */
+export async function handleSweepCustodialSolAllRoute(
+  request: Request,
+  env: CustodialBackfillEnv & RrttCronEnv,
+  sub: string,
+  method: string,
+): Promise<Response | null> {
+  if (method !== "POST" || sub !== "/internal/sweep-custodial-sol-all") return null;
+  const secret = (env.RR_PUSH_ADMIN_SECRET || "").trim();
+  if (!secret) {
+    return json({ ok: false, detail: "RR_PUSH_ADMIN_SECRET is not set on this Worker." }, 503);
+  }
+  const adminOk = await verifyWorkerOpsAdmin(request, env);
+  if (!adminOk) {
+    const has = Boolean(request.headers.get("X-RR-Push-Admin-Key"));
+    return json({ ok: false, detail: has ? "Invalid admin key." : "Missing X-RR-Push-Admin-Key header." }, 401);
+  }
+
+  let body: { destination?: string; dry_run?: boolean };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return json({ ok: false, detail: "Invalid JSON body." }, 400);
+  }
+  const destStr = String(body.destination || "").trim();
+  if (!destStr) {
+    return json({ ok: false, detail: "Body must include destination (Solana pubkey base58)." }, 422);
+  }
+  let destPk: PublicKey;
+  try {
+    destPk = new PublicKey(destStr);
+  } catch {
+    return json({ ok: false, detail: "Invalid destination pubkey." }, 422);
+  }
+  const dryRun = Boolean(body.dry_run);
+
+  const dummyStats: RrttCronRunStats = {
+    skipped_no_mint: false,
+    no_treasury_key: false,
+    aborted_no_working_rpc: false,
+    wallet_rows: 0,
+    sum_pending_units: 0,
+    treasury_rrtt_raw_start: null,
+    rrtt_transfers_confirmed: 0,
+    rrtt_transfers_skipped_treasury_short: 0,
+    sol_topups_confirmed: 0,
+    rows_chain_or_db_failed: 0,
+    error_samples: [],
+  };
+  const connection = await pickConnectionForRrttCron(String(env.SOLANA_RPC_URL || "").trim(), dummyStats);
+  if (!connection) {
+    return json(
+      {
+        ok: false,
+        detail:
+          "No working Solana RPC from this Worker. Set SOLANA_RPC_URL to a provider that allows Cloudflare egress.",
+        rpc_errors: dummyStats.error_samples,
+      },
+      503,
+    );
+  }
+
+  const treasurySkB58 = String(env.RRTT_TREASURY_SECRET_KEY_B58 || "").trim();
+  if (!dryRun && !treasurySkB58) {
+    return json(
+      { ok: false, detail: "RRTT_TREASURY_SECRET_KEY_B58 is required for live sweeps (treasury pays tx fees)." },
+      503,
+    );
+  }
+  let treasury: Keypair | null = null;
+  if (!dryRun) {
+    try {
+      treasury = Keypair.fromSecretKey(bs58.decode(treasurySkB58));
+    } catch {
+      return json({ ok: false, detail: "RRTT_TREASURY_SECRET_KEY_B58 is invalid (cannot decode treasury key)." }, 503);
+    }
+  }
+
+  const rows = await env.DB
+    .prepare(
+      `SELECT account_id, pubkey FROM internal_solana_wallets ORDER BY created_at ASC`,
+    )
+    .all<{ account_id: string; pubkey: string }>();
+  const list = rows.results || [];
+
+  const minRent = await connection.getMinimumBalanceForRentExemption(0);
+  const results: SweepCustodialSolRowResult[] = [];
+  let confirmed = 0;
+
+  for (const r of list) {
+    const accountId = String(r.account_id || "").trim();
+    const pkStr = String(r.pubkey || "").trim();
+    const base: SweepCustodialSolRowResult = {
+      account_id: accountId,
+      pubkey: pkStr,
+      balance_lamports_before: 0,
+      min_rent_lamports: minRent,
+      lamports_sent: "0",
+    };
+    if (!accountId || !pkStr) {
+      results.push({ ...base, skipped: "empty row" });
+      continue;
+    }
+    let custodialPk: PublicKey;
+    try {
+      custodialPk = new PublicKey(pkStr);
+    } catch {
+      results.push({ ...base, skipped: "invalid pubkey in D1" });
+      continue;
+    }
+    if (custodialPk.equals(destPk)) {
+      results.push({ ...base, skipped: "destination equals custodial wallet" });
+      continue;
+    }
+
+    const bal = await connection.getBalance(custodialPk, "confirmed").catch(() => -1);
+    if (bal < 0) {
+      results.push({ ...base, error: "could not read balance" });
+      continue;
+    }
+    base.balance_lamports_before = bal;
+    const toSend = bal - minRent;
+    if (toSend <= 0) {
+      results.push({
+        ...base,
+        lamports_sent: "0",
+        skipped: `nothing to send after rent floor (${minRent} lamports)`,
+      });
+      continue;
+    }
+
+    if (dryRun) {
+      results.push({
+        ...base,
+        lamports_sent: String(toSend),
+        skipped: "dry_run",
+      });
+      continue;
+    }
+
+    const custodialKp = await loadKeypairForAccount(env, accountId);
+    if (!custodialKp) {
+      results.push({ ...base, error: "cannot load or decrypt custodial key" });
+      continue;
+    }
+    if (!custodialKp.publicKey.equals(custodialPk)) {
+      results.push({ ...base, error: "D1 pubkey does not match decrypted key" });
+      continue;
+    }
+    if (!treasury) {
+      results.push({ ...base, error: "treasury key missing" });
+      continue;
+    }
+
+    try {
+      const latest = await connection.getLatestBlockhash("confirmed");
+      const ixs: TransactionInstruction[] = [
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 80_000 }),
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 0 }),
+        SystemProgram.transfer({
+          fromPubkey: custodialKp.publicKey,
+          toPubkey: destPk,
+          lamports: toSend,
+        }),
+      ];
+      const msg = new TransactionMessage({
+        payerKey: treasury.publicKey,
+        recentBlockhash: latest.blockhash,
+        instructions: ixs,
+      });
+      const tx = new VersionedTransaction(msg.compileToV0Message());
+      tx.sign([treasury, custodialKp]);
+      const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 3 });
+      await confirmSignedTxWithPoll(connection, sig, latest);
+      confirmed += 1;
+      results.push({
+        ...base,
+        lamports_sent: String(toSend),
+        signature: sig,
+      });
+      console.log("sweep custodial sol", accountId, pkStr, toSend, sig);
+    } catch (e) {
+      const m = String(e && typeof e === "object" && "message" in e ? (e as Error).message : e);
+      results.push({ ...base, lamports_sent: String(toSend), error: m });
+      console.error("sweep custodial sol failed", accountId, m);
+    }
+  }
+
+  const totalLamports = results.reduce((acc, row) => {
+    if (row.error) return acc;
+    if (!row.signature && row.skipped !== "dry_run") return acc;
+    try {
+      return acc + BigInt(row.lamports_sent || "0");
+    } catch {
+      return acc;
+    }
+  }, 0n);
+
+  const summary =
+    `**Solana — custodial SOL sweep (operator)**\n` +
+    `**Destination:** \`${destPk.toBase58()}\`\n` +
+    `**Dry run:** ${dryRun}\n` +
+    `**Wallets scanned:** ${list.length}\n` +
+    `**Transfers confirmed:** ${confirmed}\n` +
+    `**Total lamports (planned or sent):** ${totalLamports.toString()}\n`;
+  await notifySolanaToolsDiscord(env.DISCORD_WEBHOOK_SOLANA_TOOLS, summary).catch(() => {});
+
+  return json(
+    {
+      ok: true,
+      dry_run: dryRun,
+      destination: destPk.toBase58(),
+      min_rent_lamports: minRent,
+      rpc_url_used: dummyStats.rpc_url_used,
+      wallets_scanned: list.length,
+      transfers_confirmed: confirmed,
+      total_lamports_sent: totalLamports.toString(),
+      rows: results,
+    },
+    200,
+  );
+}
