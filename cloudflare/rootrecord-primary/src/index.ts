@@ -52,7 +52,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const t0 = Date.now();
     try {
-      const res = await handleRequest(request, env);
+      const res = await handleRequest(request, env, ctx);
       const ms = Date.now() - t0;
       logHttpRequestJson(request, res, ms);
       ctx.waitUntil(

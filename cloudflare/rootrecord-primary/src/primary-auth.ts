@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
 
 import { json } from "./cors";
 
@@ -24,6 +24,7 @@ import { readUserAccountAccessFlags } from "./accounts";
 import { getAppAssociationsForEmail } from "../../shared/app-associations";
 import { grantSignupBonusOnRegistration } from "./earn-signup-bonus";
 import { refreshCustodialOnchainCacheFromRpc } from "./custodial-onchain-cache";
+import type { CustodialCacheRpcEnv } from "./custodial-onchain-cache";
 
 
 
@@ -45,7 +46,7 @@ export interface AuthEnv {
 
   STRIPE_PRICE_ID?: string;
 
-  /** Mainnet RPC for custodial balance cache refresh on `/v1/me`. */
+  /** Mainnet RPC for custodial cache refresh (background `waitUntil` after `/v1/me`, cron, etc.). */
 
   SOLANA_RPC_URL?: string;
 
@@ -552,7 +553,11 @@ export async function authLogin(
 
 
 
-export async function authMe(env: AuthEnv, token: string): Promise<Response> {
+export async function authMe(
+  env: AuthEnv,
+  token: string,
+  ctx?: ExecutionContext,
+): Promise<Response> {
 
   if (!env.JWT_SECRET || env.JWT_SECRET.length < 16) return authMisconfigured();
 
@@ -635,47 +640,32 @@ export async function authMe(env: AuthEnv, token: string): Promise<Response> {
   );
 
   try {
-
-    const snap = await refreshCustodialOnchainCacheFromRpc(env, sess.accountId).catch(() => null);
-
     const cw = await env.DB
-
       .prepare(
-
         `SELECT iw.pubkey AS cpk, cs.withdraw_dest_pubkey AS wdp, cs.sol_balance_lamports_cached AS solc
-
          FROM internal_solana_wallets iw
-
          LEFT JOIN rr_earn_custodial_state cs ON cs.account_id = iw.account_id
-
          WHERE iw.account_id = ?`,
-
       )
-
       .bind(sess.accountId)
-
       .first<{ cpk: string; wdp: string | null; solc: number | null }>();
 
     if (cw?.cpk) custodial_wallet_pubkey = cw.cpk;
 
     if (cw?.wdp) withdraw_dest_pubkey = cw.wdp;
 
-    if (snap != null) {
-
-      custodial_sol_lamports_cached = Math.max(0, Math.floor(Number(snap.sol_balance_lamports_cached) || 0));
-
-      custodial_balances_rpc_ok = snap.rpc_ok;
-
-    } else if (cw?.solc != null && Number.isFinite(Number(cw.solc))) {
-
+    if (cw?.solc != null && Number.isFinite(Number(cw.solc))) {
       custodial_sol_lamports_cached = Math.floor(Number(cw.solc));
-
     }
-
   } catch {
-
     /* tables may be missing */
+  }
 
+  /** Refresh D1 custodial cache after respond — same data path as `/earn/summary` reads; avoids blocking logins on Solana RPC. */
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(
+      refreshCustodialOnchainCacheFromRpc(env as CustodialCacheRpcEnv, sess.accountId).catch(() => {}),
+    );
   }
 
   return json(

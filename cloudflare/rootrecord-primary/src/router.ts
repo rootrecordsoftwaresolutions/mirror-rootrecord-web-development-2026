@@ -1,4 +1,4 @@
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
 
 import { cors, json } from "./cors";
 
@@ -230,7 +230,11 @@ function licenseDeviceId(creds: { device_id?: string }, request: Request): strin
 
 
 
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+export async function handleRequest(
+  request: Request,
+  env: Env,
+  ctx?: ExecutionContext,
+): Promise<Response> {
 
   const url = new URL(request.url);
 
@@ -430,7 +434,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
       const tok = auth.slice(7).trim();
 
-      return authMe(env, tok);
+      return authMe(env, tok, ctx);
 
     }
 
@@ -586,7 +590,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       return json({ detail: "Missing token" }, 401);
     }
     const tok = auth.slice(7).trim();
-    return authMe(env, tok);
+    return authMe(env, tok, ctx);
   }
 
   if (sub === "/v1/me/custodial-withdraw-dest") {
@@ -872,7 +876,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     const token = auth.slice(7).trim();
 
-    const res = await authMe(env, token);
+    const res = await authMe(env, token, ctx);
 
     if (!res.ok) return res;
 
@@ -1060,7 +1064,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       if (auth.toLowerCase().startsWith("bearer ")) {
         const token = auth.slice(7).trim();
         try {
-          const meRes = await authMe(env, token);
+          const meRes = await authMe(env, token, ctx);
           if (meRes.ok) {
             const me = (await meRes.json()) as Record<string, unknown>;
             const email = String(me.email || "").trim().toLowerCase();
