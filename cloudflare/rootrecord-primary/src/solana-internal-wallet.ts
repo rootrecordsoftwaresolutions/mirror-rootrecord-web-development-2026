@@ -308,7 +308,7 @@ function custodialEnabled(env: InternalWalletEnv): boolean {
   return Boolean(String(env.INTERNAL_WALLET_ENC_KEY_B64 || "").trim());
 }
 
-/** GET/POST `/v1/me/custodial-sol-wallet` and POST `.../sign`, `.../sign-message` — matches solana-rootrecord-site Next app `custodialWalletAdapter` / `fetchCustodialInfo`. */
+/** GET/POST `/v1/me/custodial-sol-wallet` and POST `.../sign`, `.../sign-message` — matches RootRecord/solana-rootrecord-site Next app `custodialWalletAdapter` / `fetchCustodialInfo`. */
 export async function handleCustodialSolWalletV1(
   request: Request,
   env: InternalWalletEnv,

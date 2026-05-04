@@ -43,9 +43,9 @@ Thumbs.db
 # Test / coverage
 coverage/
 
-# Nested Worker mirror under Next app — develop Workers from /cloudflare/rootrecord-primary only
-solana/solanasite/cloudflare/
-solana/solana-rootrecord-site/cloudflare/
+# Solana Tools Next app lives only in github.com/RootRecord/solana-rootrecord-site — do not re-commit copies here
+solana/solana-rootrecord-site/
+solana/solanasite/
 
-# Local clone of production Solana repo (push from here to RootRecord/solana-rootrecord-site; do not commit into Web)
+# Local scratch clones (never commit into Web)
 solana-rootrecord-site-fix/

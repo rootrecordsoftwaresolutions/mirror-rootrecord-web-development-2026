@@ -9,16 +9,16 @@ Private workspace for RootRecord web stacks: **Cloudflare Workers** (primary API
 | `cloudflare/rootrecord-primary` | Main Worker (`api.rootrecord.info`): auth, weather, earn, business routes, D1 migrations |
 | `cloudflare/rootrecord-license` | Licence Worker (legacy / companion) |
 | `cloudflare/shared` | Shared TS modules (password verify, billing, app associations, etc.) |
-| `solana/solana-rootrecord-site` | Next.js 14 Solana Tools app (`pnpm`) — same codebase as [RootRecord/solana-rootrecord-site](https://github.com/RootRecord/solana-rootrecord-site) (see `solana/SOLANA-SITE-CANONICAL-REPO.md`). If you still see `solana/solanasite`, run `solana/rename-solanasite-folder.ps1`. |
+| `solana/` | **Not** the Solana Tools app source — see `solana/README.md`. The live Next app is only in [RootRecord/solana-rootrecord-site](https://github.com/RootRecord/solana-rootrecord-site). |
 | `solana/HELE` | Token / ops notes (`README.md`; local `.env` is gitignored) |
 | `main` | **rootrecord.info** Cloudflare Pages site (static HTML + `functions/`; `wrangler pages deploy`) |
 
-Worker source of truth for the primary API is **`cloudflare/rootrecord-primary`**. A copy under `solana/solana-rootrecord-site/cloudflare/` (legacy: `solana/solanasite/cloudflare/`) is intentionally **not** tracked (install deps locally; use the canonical tree above).
+Worker source of truth for the primary API is **`cloudflare/rootrecord-primary`**.
 
 ## New machine checklist
 
 1. **Clone** this repo and open the `Web` folder (or your clone root).
-2. **Node.js** ≥ 18 and **npm**; for Solana site also **pnpm** (see `solana/solana-rootrecord-site/pnpm-lock.yaml` or `solana/solanasite/pnpm-lock.yaml` until renamed).
+2. **Node.js** ≥ 18 and **npm**; for the Solana **site** clone [solana-rootrecord-site](https://github.com/RootRecord/solana-rootrecord-site) separately and use **pnpm** there.
 3. **Cloudflare:** [Wrangler](https://developers.cloudflare.com/workers/wrangler/) — `npx wrangler login` once per machine.
 4. **Secrets:** copy each project’s `.env.example` to `.env` / `.dev.vars` where documented; never commit real secrets. Worker deploy uses `wrangler secret put` for production secrets.
 5. **Deploy credentials:** copy **`credentials.env.example`** → **`credentials.env`** at this repo’s root (or any parent folder of `cloudflare/rootrecord-primary`). Both Worker `deploy.ps1` scripts walk upward until they find `credentials.env`. The real file is gitignored.
@@ -48,17 +48,9 @@ cd cloudflare/shared
 npm ci
 ```
 
-### Install & run — Solana Next app
+### Solana Tools Next app (separate repo)
 
-```bash
-cd solana/solana-rootrecord-site
-# or, until you run solana/rename-solanasite-folder.ps1:
-# cd solana/solanasite
-pnpm install
-pnpm dev
-```
-
-**Deploy:** Vercel (and similar) should track **`RootRecord/solana-rootrecord-site`**, not only this monorepo. See `solana/SOLANA-SITE-CANONICAL-REPO.md`.
+Clone **`RootRecord/solana-rootrecord-site`**, then `pnpm install` / `pnpm dev` there. Do not expect a runnable app under `Web/solana/`. See `solana/SOLANA-SITE-CANONICAL-REPO.md`.
 
 ### Install & run — marketing site (Pages, `main/`)
 
