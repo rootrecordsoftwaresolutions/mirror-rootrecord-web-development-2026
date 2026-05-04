@@ -90,6 +90,26 @@ export function formatOtcUsdPerWholeToken(usd: number): string {
   return s.length ? s : String(usd);
 }
 
+/**
+ * SOL/USD from Jupiter (v3 lite API, then v2 fallback). Lightweight for headers and small API routes.
+ */
+export async function fetchJupiterSolUsd(init?: RequestInit): Promise<number> {
+  try {
+    const url = `https://lite-api.jup.ag/price/v3?ids=${WSOL_MINT}`;
+    const r = await fetch(url, init);
+    if (r.ok) {
+      const j = (await r.json()) as Record<string, { usdPrice?: number } | undefined>;
+      const sol = j[WSOL_MINT]?.usdPrice;
+      if (Number.isFinite(sol) && sol != null && sol > 0) return sol;
+    }
+  } catch {
+    /* try v2 */
+  }
+  const v2 = await fetchJupiterTokenUsdV2Fallback(WSOL_MINT, init);
+  if (v2 != null) return v2;
+  throw new Error('SOL/USD unavailable');
+}
+
 /** Jupiter Price API — SOL only; same network request as {@link fetchJupiterOtcPriceMarks} under the hood. */
 export async function fetchJupiterSolUsdcUsd(init?: RequestInit): Promise<JupiterUsdMark> {
   const m = await fetchJupiterOtcPriceMarks(init);

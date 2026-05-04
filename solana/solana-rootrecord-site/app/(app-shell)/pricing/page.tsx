@@ -14,8 +14,9 @@ import {
   REMOVE_LIQUIDITY_FEE_SOL,
   RAYDIUM_MAINNET_CPMM_POOL_CREATE_FEE_SOL,
   REFERRAL_FEE_SHARE_BPS,
+  FREEZE_THAW_FEE_PER_ADDRESS_SOL,
 } from '@/lib/solana';
-import { BULK_FEE_PER_100_SOL } from '@/lib/bulkSol';
+import { BULK_FEE_PER_ADDRESS_SOL } from '@/lib/bulkSol';
 
 export const metadata: Metadata = pageSeo({
   path: '/pricing',
@@ -56,10 +57,10 @@ function buildRows(): Row[] {
       onchain: '~0.000005 SOL',
     },
     {
-      action: 'Bulk freeze / thaw holder ATAs (up to 100 wallets per run)',
-      us: '0 SOL',
+      action: 'Bulk freeze / thaw holder ATAs (batched by tx size)',
+      us: `${feeSol(FREEZE_THAW_FEE_PER_ADDRESS_SOL)} / account`,
       them: '0.02 – 0.05 SOL',
-      onchain: 'Network fees only (often multiple txs when batching)',
+      onchain: 'Fee in same tx as each batch; extra txs only when batching',
     },
     {
       action: 'Mint additional supply',
@@ -92,28 +93,28 @@ function buildRows(): Row[] {
       onchain: '~0.000005 SOL',
     },
     {
-      action: `Create Raydium CPMM pool (RootRecord fee tx before pool)`,
+      action: `Create Raydium CPMM pool (RootRecord fee in same signed tx as pool creation)`,
       us: feeSol(LAUNCH_FEE_SOL),
       them: '0.05 – 0.15 SOL+',
       onchain: POOL_SETUP_MAINNET_HINT,
     },
     {
-      action: 'Add liquidity to existing CPMM pool (fee tx before deposit)',
+      action: 'Add liquidity to existing CPMM pool (fee in same tx as deposit)',
       us: feeSol(ADD_LIQUIDITY_FEE_SOL),
       them: '0.02 – 0.10 SOL',
       onchain: '~0.000005 SOL',
     },
     {
-      action: 'Remove liquidity from CPMM pool (fee tx before withdraw)',
+      action: 'Remove liquidity from CPMM pool (fee in same tx as withdraw)',
       us: feeSol(REMOVE_LIQUIDITY_FEE_SOL),
       them: '0.02 – 0.10 SOL',
       onchain: '~0.000005 SOL',
     },
     {
-      action: `Bulk SOL or SPL sends (per 100 recipient lines, rounded up)`,
-      us: feeSol(BULK_FEE_PER_100_SOL),
+      action: `Bulk SOL or SPL sends (per recipient line)`,
+      us: `${feeSol(BULK_FEE_PER_ADDRESS_SOL)} / address`,
       them: 'Varies',
-      onchain: 'Network fees only',
+      onchain: 'Fee in same tx as each batch; network fees per signature',
     },
     {
       action: 'Token stats dashboard (lookup / share)',

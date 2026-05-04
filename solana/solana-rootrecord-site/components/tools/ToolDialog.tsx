@@ -24,7 +24,7 @@ import {
   revokeMintAuthority,
   revokeFreezeAuthority,
   bulkFreezeOrThawWalletAtas,
-  FREEZE_THAW_BULK_MAX_WALLETS,
+  FREEZE_THAW_FEE_PER_ADDRESS_SOL,
   mintMore,
   burnTokens,
   updateTokenMetadata,
@@ -90,9 +90,10 @@ const META: Record<
   'freeze-thaw-bulk': {
     title: 'Freeze / thaw holder wallets',
     desc:
-      'Toggle freeze or thaw for up to 100 lines: each line may be a **holder wallet** (we use its ATA for the mint) **or** a **token account** address that already holds this mint. Your connected wallet must be the mint’s freeze authority. RootRecord fee is **0 SOL** for now — you only pay Solana network fees (often one signature per batch of up to 10 accounts).',
-    cta: 'Sign (free — network fees only)',
-    free: true,
+      'Toggle freeze or thaw for many lines: each line may be a **holder wallet** (we use its ATA for the mint) **or** a **token account** address that already holds this mint. Your connected wallet must be the mint’s freeze authority. RootRecord fee is **' +
+      FREEZE_THAW_FEE_PER_ADDRESS_SOL +
+      ' SOL per account** you actually freeze/thaw, charged in the **same transaction** as those instructions (additional signatures only when we batch for tx size).',
+    cta: `Sign · ${FREEZE_THAW_FEE_PER_ADDRESS_SOL} SOL / account`,
   },
   'mint-more': {
     title: 'Mint more tokens',
@@ -719,7 +720,7 @@ export function ToolDialog({ kind, initialMint, onClose }: Props) {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label>Wallets or token accounts (up to {FREEZE_THAW_BULK_MAX_WALLETS} lines)</Label>
+                <Label>Wallets or token accounts (one per line)</Label>
                 <Textarea
                   data-testid="tool-freeze-bulk-wallets"
                   rows={8}

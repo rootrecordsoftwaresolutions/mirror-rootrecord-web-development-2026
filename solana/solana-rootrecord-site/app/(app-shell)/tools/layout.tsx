@@ -6,7 +6,7 @@ export const metadata: Metadata = pageSeo({
   path: '/tools',
   title: 'Manage Solana tokens',
   description:
-    'On-chain tools: revoke mint or freeze authority, bulk freeze or thaw up to 100 holder ATAs (toggle; no RootRecord fee while waived), mint more supply, update Metaplex metadata, Token-2022 transfer fee withdraw and harvest, Raydium CPMM pool helpers, and more. Flat SOL tool fees where applicable.',
+    'On-chain tools: revoke mint or freeze authority, bulk freeze or thaw many holder ATAs (per-account fee bundled in each batch tx), mint more supply, update Metaplex metadata, Token-2022 transfer fee withdraw and harvest, Raydium CPMM pool helpers, and more. Flat SOL tool fees where applicable.',
   keywords: [
     ...SEO_KEYWORDS.core,
     'revoke freeze authority',

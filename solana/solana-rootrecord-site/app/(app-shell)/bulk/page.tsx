@@ -22,10 +22,10 @@ import { WalletMultiButton } from '@/components/wallet/WalletButton';
 import { MintFromWalletField } from '@/components/wallet/MintFromWalletField';
 
 import {
-  BULK_FEE_PER_100_SOL,
+  BULK_FEE_PER_ADDRESS_SOL,
   MAX_BULK_RECIPIENTS,
   bulkPlatformFeeSol,
-  bulkTokenFirstTxOverhead,
+  bulkTokenChunkInstructionOverheads,
   bulkTokenNeedsCreatePerRow,
   deriveBulkDestAtas,
   estimateBulkTokenTxCount,
@@ -147,9 +147,9 @@ export default function BulkSolPage() {
     const platform = bulkPlatformFeeSol(n);
     const payer = wallet.publicKey;
     const ref = getStoredReferrer();
-    const firstOver = payer
-      ? bulkTokenFirstTxOverhead(payer, platform, ref)
-      : 2;
+    const { firstChunk, restChunk } = payer
+      ? bulkTokenChunkInstructionOverheads(payer, ref)
+      : { firstChunk: 2, restChunk: 1 };
 
     let batches: number;
     let sendHuman = 0;
@@ -173,7 +173,7 @@ export default function BulkSolPage() {
               ataExists,
             )
           : Array.from({ length: n }, () => true);
-      batches = estimateBulkTokenTxCount(needsCreate, firstOver);
+      batches = estimateBulkTokenTxCount(needsCreate, firstChunk, restChunk);
       if (mintCtx && n > 0) {
         let rawSum = 0n;
         for (const r of parsed.rows) rawSum += r.lamports;
@@ -334,11 +334,11 @@ export default function BulkSolPage() {
       </h1>
       <p className="mt-4 text-muted-foreground leading-relaxed">
         One line per recipient. Platform fee is{' '}
-        <strong className="text-foreground">{BULK_FEE_PER_100_SOL} SOL</strong> per{' '}
-        <strong className="text-foreground">100</strong> addresses (rounded up). You pay
-        Solana network fees on each signed transaction — we batch transfers to stay within
-        safe transaction size limits (up to {MAX_BULK_RECIPIENTS} lines per run). SPL sends
-        may create recipient token accounts; you pay that rent from your SOL balance.
+        <strong className="text-foreground">{BULK_FEE_PER_ADDRESS_SOL} SOL</strong> per
+        address (each signed transaction bundles that batch’s fee with the sends). You pay
+        Solana network fees on each transaction — we batch to stay within safe size limits
+        (up to {MAX_BULK_RECIPIENTS} lines per run). SPL sends may create recipient token
+        accounts; you pay that rent from your SOL balance.
       </p>
 
       {!feeReady && (

@@ -15,15 +15,25 @@ import { ArrowRight } from 'lucide-react';
 import { ToolDialog, type ToolKind } from '@/components/tools/ToolDialog';
 import { TOOL_CATALOG } from '@/lib/toolsCatalog';
 
+const TOOL_KINDS_FROM_CATALOG = new Set<ToolKind>(
+  TOOL_CATALOG.flatMap((e) => ('kind' in e ? [e.kind] : [])),
+);
+
 function ToolsInner() {
   const params = useSearchParams();
   const [active, setActive] = useState<ToolKind | null>(null);
   const [initialMint, setInitialMint] = useState<string | undefined>();
 
   const actionParam = params.get('action');
+  const toolParam = params.get('tool')?.trim() || '';
   const mintParam = params.get('mint')?.trim() || '';
 
   useEffect(() => {
+    if (toolParam && TOOL_KINDS_FROM_CATALOG.has(toolParam as ToolKind)) {
+      setActive(toolParam as ToolKind);
+      setInitialMint(mintParam || undefined);
+      return;
+    }
     if (actionParam === 'mint') {
       setActive('mint-more');
       setInitialMint(mintParam || undefined);
@@ -31,7 +41,7 @@ function ToolsInner() {
       setActive('burn-tokens');
       setInitialMint(mintParam || undefined);
     }
-  }, [actionParam, mintParam]);
+  }, [actionParam, mintParam, toolParam]);
 
   return (
     <div className="container py-14 md:py-20">
@@ -49,9 +59,9 @@ function ToolsInner() {
           liquidity flows may batch or chain as required.
         </p>
         <p className="mt-4 text-sm text-muted-foreground">
-          Prefer one screen?{' '}
+          Short wallet home:{' '}
           <Link href="/dashboard" className="text-sol-green hover:underline font-medium">
-            Open the Dashboard hub
+            Hub
           </Link>
           .
         </p>

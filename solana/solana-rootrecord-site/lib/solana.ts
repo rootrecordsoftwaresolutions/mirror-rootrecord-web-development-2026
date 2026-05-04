@@ -115,11 +115,14 @@ export const REMOVE_LIQUIDITY_FEE_SOL = parseFeeSol(
   0.005,
 );
 
-/** Max unique holder wallet lines per bulk freeze/thaw run. */
-export const FREEZE_THAW_BULK_MAX_WALLETS = 100;
+/** RootRecord fee per account frozen or thawed in the bulk tool (same tx as the SPL instructions). */
+export const FREEZE_THAW_FEE_PER_ADDRESS_SOL = parseFeeSol(
+  process.env.NEXT_PUBLIC_FREEZE_THAW_FEE_PER_ADDRESS_SOL,
+  0.0005,
+);
 
-/** SPL freeze/thaw instructions per transaction (stay under typical tx size limits). */
-const FREEZE_THAW_BULK_IX_PER_TX = 10;
+/** SPL freeze/thaw instructions per transaction (legacy tx size; fee + memo share the budget). */
+const FREEZE_THAW_BULK_IX_PER_TX = 12;
 
 /** Raydium mainnet CPMM pool-creation fee (SOL); informational — from Raydium public `createPoolFee`. */
 export const RAYDIUM_MAINNET_CPMM_POOL_CREATE_FEE_SOL = 0.15;
@@ -560,7 +563,8 @@ export type FreezeThawBulkSkip = { owner: string; reason: string };
  * Freeze or thaw SPL token accounts for `mint`.
  * Each line may be either (1) a **holder wallet** pubkey → we use that wallet’s ATA for `mint`, or
  * (2) a **token account** pubkey that already holds `mint` → we freeze/thaw that account directly.
- * RootRecord platform fee is **0 SOL** (network fees only). Batches instructions across multiple txs.
+ * RootRecord fee (`FREEZE_THAW_FEE_PER_ADDRESS_SOL` per applied account) is bundled in the same
+ * transaction as each batch’s freeze/thaw instructions. Batches across multiple signatures when needed.
  */
 export async function bulkFreezeOrThawWalletAtas(
   wallet: WalletContextState,
@@ -594,11 +598,6 @@ export async function bulkFreezeOrThawWalletAtas(
     if (lineSet.has(s)) continue;
     lineSet.add(s);
     lines.push(s);
-    if (lines.length > FREEZE_THAW_BULK_MAX_WALLETS) {
-      throw new Error(
-        `At most ${FREEZE_THAW_BULK_MAX_WALLETS} unique lines per run.`,
-      );
-    }
   }
 
   const skipped: FreezeThawBulkSkip[] = [];
@@ -673,8 +672,18 @@ export async function bulkFreezeOrThawWalletAtas(
   const signatures: string[] = [];
   for (let i = 0; i < ixs.length; i += FREEZE_THAW_BULK_IX_PER_TX) {
     const chunk = ixs.slice(i, i + FREEZE_THAW_BULK_IX_PER_TX);
-    const batch = [...chunk];
-    appendReferralMemoIfEligible(batch, wallet.publicKey, referrerWallet);
+    const batchFeeSol = FREEZE_THAW_FEE_PER_ADDRESS_SOL * chunk.length;
+    const batch: TransactionInstruction[] = [
+      ...chunk,
+      ...platformFeeTransferInstructions(
+        wallet.publicKey,
+        batchFeeSol,
+        referrerWallet,
+      ),
+    ];
+    if (i === 0) {
+      appendReferralMemoIfEligible(batch, wallet.publicKey, referrerWallet);
+    }
     signatures.push(await sendSimpleTx(wallet, batch));
   }
 

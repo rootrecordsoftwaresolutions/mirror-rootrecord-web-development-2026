@@ -37,7 +37,7 @@ export type ToolCatalogEntry =
       t2022?: boolean;
     };
 
-/** Single source for /tools grid and Dashboard hub (dialog + link cards). */
+/** Single source for /tools grid, sidebar Tools nav, and dialog + link cards. */
 export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     kind: 'revoke-mint',
@@ -56,7 +56,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     kind: 'freeze-thaw-bulk',
     title: 'Freeze / thaw wallets',
-    desc: 'Toggle freeze or thaw for up to 100 lines: holder wallets (ATAs) or raw token accounts for the mint. Freeze authority required. No RootRecord fee for now — network fees only.',
+    desc: 'Toggle freeze or thaw for many lines: holder wallets (ATAs) or raw token accounts for the mint. Freeze authority required. RootRecord fee per account, bundled in each signed transaction (extra txs only when batching).',
     icon: Snowflake,
     tone: 'green',
   },

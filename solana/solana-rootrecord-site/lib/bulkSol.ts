@@ -26,17 +26,22 @@ import {
   eligibleReferrerForPayer,
 } from '@/lib/referralMemo';
 
-/** Platform fee: SOL per 100 recipient addresses (rounded up). */
-export function parseBulkFeePer100Sol(): number {
-  const n = parseFloat(process.env.NEXT_PUBLIC_BULK_FEE_PER_100_SOL ?? '');
-  return Number.isFinite(n) && n >= 0 ? n : 0.01;
+/** Platform fee: SOL charged per recipient line (same total whether we split across txs). */
+export function parseBulkFeePerAddressSol(): number {
+  const per = parseFloat(process.env.NEXT_PUBLIC_BULK_FEE_PER_ADDRESS_SOL ?? '');
+  if (Number.isFinite(per) && per >= 0) return per;
+  const legacyPer100 = parseFloat(process.env.NEXT_PUBLIC_BULK_FEE_PER_100_SOL ?? '');
+  if (Number.isFinite(legacyPer100) && legacyPer100 >= 0) {
+    return legacyPer100 / 100;
+  }
+  return 0.0005;
 }
 
-export const BULK_FEE_PER_100_SOL = parseBulkFeePer100Sol();
+export const BULK_FEE_PER_ADDRESS_SOL = parseBulkFeePerAddressSol();
 
 export function bulkPlatformFeeSol(recipientCount: number): number {
   if (recipientCount <= 0) return 0;
-  return Math.ceil(recipientCount / 100) * BULK_FEE_PER_100_SOL;
+  return recipientCount * BULK_FEE_PER_ADDRESS_SOL;
 }
 
 export type BulkTransferRow = { to: PublicKey; lamports: bigint };
@@ -56,7 +61,8 @@ export function estimateBulkTxCount(recipientCount: number): number {
   );
 }
 
-export const MAX_BULK_RECIPIENTS = 200;
+/** Soft cap to protect the browser from huge parses; batching handles instruction limits. */
+export const MAX_BULK_RECIPIENTS = 10_000;
 
 function chunkTransfers(rows: BulkTransferRow[]): BulkTransferRow[][] {
   if (!rows.length) return [];
@@ -76,21 +82,28 @@ function chunkTransfers(rows: BulkTransferRow[]): BulkTransferRow[][] {
 const TOKEN_IX_LIMIT_FIRST = 10;
 const TOKEN_IX_LIMIT_REST = 12;
 
-export function bulkTokenFirstTxOverhead(
+/**
+ * Instruction overhead for each SPL bulk-send tx: platform fee transfer(s) + optional
+ * referral memo on the **first** signed tx only (fee is included in **every** tx).
+ */
+export function bulkTokenChunkInstructionOverheads(
   payer: PublicKey,
-  platformFeeSol: number,
   referrer: string | null | undefined,
-): number {
-  const feeIxs = platformFeeTransferInstructions(payer, platformFeeSol, referrer);
-  let n = feeIxs.length;
-  if (eligibleReferrerForPayer(referrer, payer)) n += 1;
-  return n;
+): { firstChunk: number; restChunk: number } {
+  const feeN = platformFeeTransferInstructions(
+    payer,
+    BULK_FEE_PER_ADDRESS_SOL,
+    referrer,
+  ).length;
+  const memoN = eligibleReferrerForPayer(referrer, payer) ? 1 : 0;
+  return { firstChunk: feeN + memoN, restChunk: feeN };
 }
 
 export function chunkRowsByTokenIxBudget(
   rows: BulkTransferRow[],
   needsCreate: boolean[],
-  firstOverhead: number,
+  firstChunkOverhead: number,
+  restChunkOverhead: number,
 ): BulkTransferRow[][] {
   if (rows.length !== needsCreate.length) {
     throw new Error('needsCreate length must match rows');
@@ -100,8 +113,10 @@ export function chunkRowsByTokenIxBudget(
   let idx = 0;
   while (idx < rows.length) {
     const chunk: BulkTransferRow[] = [];
-    let ixUsed = chunks.length === 0 ? firstOverhead : 0;
-    const limit = chunks.length === 0 ? TOKEN_IX_LIMIT_FIRST : TOKEN_IX_LIMIT_REST;
+    const chunkIdx = chunks.length;
+    const overhead = chunkIdx === 0 ? firstChunkOverhead : restChunkOverhead;
+    let ixUsed = overhead;
+    const limit = chunkIdx === 0 ? TOKEN_IX_LIMIT_FIRST : TOKEN_IX_LIMIT_REST;
     while (idx < rows.length) {
       const cost = needsCreate[idx] ? 2 : 1;
       if (ixUsed + cost > limit) {
@@ -128,14 +143,20 @@ const ESTIMATE_STUB_PK = new PublicKey(
 
 export function estimateBulkTokenTxCount(
   needsCreate: boolean[],
-  firstOverhead: number,
+  firstChunkOverhead: number,
+  restChunkOverhead: number,
 ): number {
   if (!needsCreate.length) return 0;
   const stubRows: BulkTransferRow[] = needsCreate.map(() => ({
     to: ESTIMATE_STUB_PK,
     lamports: 1n,
   }));
-  return chunkRowsByTokenIxBudget(stubRows, needsCreate, firstOverhead).length;
+  return chunkRowsByTokenIxBudget(
+    stubRows,
+    needsCreate,
+    firstChunkOverhead,
+    restChunkOverhead,
+  ).length;
 }
 
 /** Resolve mint address for bulk SPL sends (program id + decimals). */
@@ -303,7 +324,8 @@ export interface SendBulkSolResult {
 
 /**
  * Sends native SOL to many recipients in sequential transactions (fresh blockhash each).
- * First transaction includes the platform fee (if configured) and optional referral memo.
+ * Each transaction includes that batch’s platform fee (if configured) with the transfers;
+ * optional referral memo only on the first signed tx.
  */
 export async function sendBulkSolTransfers(
   wallet: WalletContextState,
@@ -317,18 +339,20 @@ export async function sendBulkSolTransfers(
 
   const payer = wallet.publicKey;
   const connection = getConnection();
-  const platformFeeSol = bulkPlatformFeeSol(transfers.length);
-  const feeIxs = platformFeeTransferInstructions(
-    payer,
-    platformFeeSol,
-    opts?.referrer ?? null,
-  );
+  const totalPlatformFeeSol = bulkPlatformFeeSol(transfers.length);
   const chunks = chunkTransfers(transfers);
   const signatures: string[] = [];
 
   for (let c = 0; c < chunks.length; c++) {
+    const chunkRows = chunks[c];
+    const batchFeeSol = BULK_FEE_PER_ADDRESS_SOL * chunkRows.length;
+    const feeIxs = platformFeeTransferInstructions(
+      payer,
+      batchFeeSol,
+      opts?.referrer ?? null,
+    );
     const ixs: TransactionInstruction[] = [];
-    for (const { to, lamports } of chunks[c]) {
+    for (const { to, lamports } of chunkRows) {
       if (lamports > BigInt(Number.MAX_SAFE_INTEGER)) {
         throw new Error('Per-recipient amount too large for this tool');
       }
@@ -340,8 +364,8 @@ export async function sendBulkSolTransfers(
         }),
       );
     }
+    for (const ix of feeIxs) ixs.push(ix);
     if (c === 0) {
-      for (const ix of feeIxs) ixs.push(ix);
       appendReferralMemoIfEligible(ixs, payer, opts?.referrer ?? null);
     }
 
@@ -363,10 +387,17 @@ export async function sendBulkSolTransfers(
     signatures.push(sig);
   }
 
+  const feeConfigured =
+    platformFeeTransferInstructions(
+      payer,
+      BULK_FEE_PER_ADDRESS_SOL,
+      opts?.referrer ?? null,
+    ).length > 0;
+
   return {
     signatures,
     batchCount: chunks.length,
-    platformFeeSol: feeIxs.length ? platformFeeSol : 0,
+    platformFeeSol: feeConfigured ? totalPlatformFeeSol : 0,
   };
 }
 
@@ -378,8 +409,8 @@ export interface SendBulkTokenResult {
 
 /**
  * SPL Token / Token-2022: create recipient ATAs when missing, then transfer checked from the
- * wallet's ATA. Sequential transactions with a fresh blockhash each. First tx adds platform
- * fee (if configured) and optional referral memo.
+ * wallet's ATA. Sequential transactions with a fresh blockhash each. Each tx bundles that
+ * chunk’s platform fee with the token instructions; optional referral memo on the first tx only.
  */
 export async function sendBulkTokenTransfers(
   wallet: WalletContextState,
@@ -438,17 +469,16 @@ export async function sendBulkTokenTransfers(
   const needsCreate = bulkTokenNeedsCreatePerRow(destAtas, existsOnChain);
 
   const platformFeeSol = bulkPlatformFeeSol(transfers.length);
-  const firstOverhead = bulkTokenFirstTxOverhead(
+  const { firstChunk, restChunk } = bulkTokenChunkInstructionOverheads(
     payer,
-    platformFeeSol,
     opts?.referrer ?? null,
   );
-  const feeIxs = platformFeeTransferInstructions(
-    payer,
-    platformFeeSol,
-    opts?.referrer ?? null,
+  const chunks = chunkRowsByTokenIxBudget(
+    transfers,
+    needsCreate,
+    firstChunk,
+    restChunk,
   );
-  const chunks = chunkRowsByTokenIxBudget(transfers, needsCreate, firstOverhead);
 
   const rentPerAta = await connection.getMinimumBalanceForRentExemption(165);
   const creates = needsCreate.filter(Boolean).length;
@@ -503,8 +533,14 @@ export async function sendBulkTokenTransfers(
       globalIdx++;
     }
 
+    const batchFeeSol = BULK_FEE_PER_ADDRESS_SOL * chunk.length;
+    const feeIxs = platformFeeTransferInstructions(
+      payer,
+      batchFeeSol,
+      opts?.referrer ?? null,
+    );
+    for (const ix of feeIxs) ixs.push(ix);
     if (c === 0) {
-      for (const ix of feeIxs) ixs.push(ix);
       appendReferralMemoIfEligible(ixs, payer, opts?.referrer ?? null);
     }
 
@@ -526,10 +562,17 @@ export async function sendBulkTokenTransfers(
     signatures.push(sig);
   }
 
+  const feeConfigured =
+    platformFeeTransferInstructions(
+      payer,
+      BULK_FEE_PER_ADDRESS_SOL,
+      opts?.referrer ?? null,
+    ).length > 0;
+
   return {
     signatures,
     batchCount: chunks.length,
-    platformFeeSol: feeIxs.length ? platformFeeSol : 0,
+    platformFeeSol: feeConfigured ? platformFeeSol : 0,
   };
 }
 

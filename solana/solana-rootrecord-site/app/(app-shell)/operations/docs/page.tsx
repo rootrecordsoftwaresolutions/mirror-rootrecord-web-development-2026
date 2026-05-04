@@ -31,11 +31,11 @@ const SECTIONS: { n: string; title: string; body: ReactNode }[] = [
     body: (
       <>
         <p>
-          Brand new? Read the short guided walkthrough on{' '}
-          <Link href="/dashboard#dashboard-start" className="text-sol-green hover:underline">
-            Start here
+          Brand new? Open the{' '}
+          <Link href="/dashboard" className="text-sol-green hover:underline">
+            Hub
           </Link>{' '}
-          first, then come back for detail.
+          for a quick snapshot, then continue with this page for detail.
         </p>
         <p className="mt-3">
           Use <strong className="text-foreground">Select Wallet</strong> in the top
@@ -98,7 +98,8 @@ const SECTIONS: { n: string; title: string; body: ReactNode }[] = [
         never increase) and <strong className="text-foreground">revoke freeze</strong>{' '}
         (so holder balances can&apos;t be frozen). If you still hold freeze authority, you
         can also <strong className="text-foreground">freeze or thaw</strong> many holder
-        wallets at once from Tools (bulk ATA tool; no platform fee while that tool is waived).
+        wallets at once from Tools (bulk ATA tool; small per-account fee bundled in each signed
+        transaction).
         Other paid steps cost{' '}
         <strong className="text-foreground">0.01 SOL</strong> through us, plus the usual
         network fee.
