@@ -17,6 +17,24 @@ export type CustodialCacheRpcEnv = {
 /** Skip writing D1 if `cache_updated_at` is this fresh (reads still hit RPC every request). */
 const D1_WRITE_MIN_INTERVAL_MS = 12_000;
 
+/**
+ * Solana RPC can stall indefinitely (edge rate limits, TCP half-open). `/auth/me` and `/earn/summary`
+ * await this path — must return so mobile apps exit the global Loading gate and rewards UI.
+ */
+const RPC_REFRESH_BUDGET_MS = 4_000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function isLikelyInfraRpcError(e: unknown): boolean {
   const s = e instanceof Error ? e.message : String(e);
   return /429|503|504|408|ECONNRESET|ETIMEDOUT|fetch failed|Too many|rate limit|socket hang|network/i.test(s);
@@ -234,7 +252,10 @@ export async function refreshCustodialOnchainCacheFromRpc(
     prev?.custodial_rrtt_onchain != null ? Math.max(0, Math.floor(Number(prev.custodial_rrtt_onchain) || 0)) : null;
   const prevSol = prev?.sol_balance_lamports_cached != null ? Math.max(0, Math.floor(Number(prev.sol_balance_lamports_cached) || 0)) : 0;
 
-  const live = await readLiveFromRpc(env, mintStr, pkStr);
+  const rpcDead = { rrtt: null as number | null, sol: 0, solOk: false, tokenOk: false };
+  const live = await withTimeout(readLiveFromRpc(env, mintStr, pkStr), RPC_REFRESH_BUDGET_MS, rpcDead).catch(
+    () => rpcDead,
+  );
   const rpc_ok = live.solOk || live.tokenOk;
 
   const rrttOut = live.tokenOk ? live.rrtt : prevRrtt;
