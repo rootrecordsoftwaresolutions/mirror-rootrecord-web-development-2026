@@ -32,8 +32,8 @@ ACCUWEATHER_REUSE_RADIUS_MILES = "25"
 # Stripe Checkout: create a Product + recurring Price in Dashboard → copy Price id (`price_...`).
 # Also run: wrangler secret put STRIPE_SECRET_KEY  (use `sk_live_...` or `sk_test_...` from credentials.env via deploy.ps1)
 # Stripe webhooks live on license: https://rootrecord-license.rootrecord.workers.dev/v1/billing/webhook
-# Production: replace placeholder below or set STRIPE_PRICE_ID in Cloudflare Dashboard (Worker → Variables) so checkout is not broken.
-STRIPE_PRICE_ID = "price_REPLACE_WITH_YOUR_STRIPE_PRICE_ID"
+# Recurring monthly subscription (Stripe Dashboard → Product “Monthly”; matches site billing).
+STRIPE_PRICE_ID = "price_1TQIpzIaRpbMiAov5g5iTPh9"
 # Stripe Pricing Table (same ids as rootrecord-website Pages Billing; optional here for parity / future use).
 STRIPE_PRICING_TABLE_ID = "prctbl_1TQJ0kIaRpbMiAovAUe3X3QJ"
 STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWxLXDgJR7kRNSBSM8sJ2Wat1zuC56iE4TCTyPfqmEfTT600cR21LwYA"
@@ -45,6 +45,8 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWx
 ROOTRECORD_SOLANA_TX_URL = "https://rootrecord-solana-tx.rootrecord.workers.dev"
 RRTT_MINT_BASE58 = "6KfGKe13ASrV5WHvChbapQXxxEFRNqwpwrdEVsX6RQMT"
 RRTT_DECIMALS = "9"
+# Max wait for custodial balance Solana RPC on `/auth/me` + `/earn/summary` (see custodial-onchain-cache.ts).
+CUSTODIAL_RPC_REFRESH_BUDGET_MS = "10000"
 # Native apps: GET /api/mobile/version-policy?app_id=… — bump when old builds must update.
 MIN_APP_VERSION_WEATHER = "1.0.16"
 MIN_APP_VERSION_BM = "1.06"

@@ -149,6 +149,11 @@ export interface Env {
   RRTT_MINT_BASE58?: string;
   /** Mint decimals for transfer_checked (default 0 = whole units match rr_earn integers). */
   RRTT_DECIMALS?: string;
+  /**
+   * Wall-clock cap (ms) for custodial Solana RPC refresh on `/auth/me` + `/earn/summary` (string in wrangler [vars]).
+   * Default 10000; clamped in code to a safe range.
+   */
+  CUSTODIAL_RPC_REFRESH_BUDGET_MS?: string;
   /** Treasury keypair secret key base58 (same encoding as Phantom export). */
   RRTT_TREASURY_SECRET_KEY_B58?: string;
 

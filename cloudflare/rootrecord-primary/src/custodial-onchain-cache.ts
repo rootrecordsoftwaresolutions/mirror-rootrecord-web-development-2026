@@ -12,6 +12,7 @@ export type CustodialCacheRpcEnv = {
   SOLANA_RPC_URL?: string;
   RRTT_MINT_BASE58?: string;
   RRTT_DECIMALS?: string;
+  CUSTODIAL_RPC_REFRESH_BUDGET_MS?: string;
 };
 
 /** Skip writing D1 if `cache_updated_at` is this fresh (reads still hit RPC every request). */
@@ -20,8 +21,17 @@ const D1_WRITE_MIN_INTERVAL_MS = 12_000;
 /**
  * Solana RPC can stall indefinitely (edge rate limits, TCP half-open). `/auth/me` and `/earn/summary`
  * await this path — must return so mobile apps exit the global Loading gate and rewards UI.
+ * `CUSTODIAL_RPC_REFRESH_BUDGET_MS` in wrangler [vars] (default 10000).
  */
-const RPC_REFRESH_BUDGET_MS = 4_000;
+const RPC_REFRESH_BUDGET_DEFAULT_MS = 10_000;
+const RPC_REFRESH_BUDGET_MIN_MS = 2_000;
+const RPC_REFRESH_BUDGET_MAX_MS = 30_000;
+
+function custodialRpcRefreshBudgetMs(env: CustodialCacheRpcEnv): number {
+  const n = Math.floor(Number(String(env.CUSTODIAL_RPC_REFRESH_BUDGET_MS || "").trim()));
+  if (!Number.isFinite(n) || n <= 0) return RPC_REFRESH_BUDGET_DEFAULT_MS;
+  return Math.min(RPC_REFRESH_BUDGET_MAX_MS, Math.max(RPC_REFRESH_BUDGET_MIN_MS, n));
+}
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,9 +262,10 @@ export async function refreshCustodialOnchainCacheFromRpc(
     prev?.custodial_rrtt_onchain != null ? Math.max(0, Math.floor(Number(prev.custodial_rrtt_onchain) || 0)) : null;
   const prevSol = prev?.sol_balance_lamports_cached != null ? Math.max(0, Math.floor(Number(prev.sol_balance_lamports_cached) || 0)) : 0;
 
-  const rpcDead = { rrtt: null as number | null, sol: 0, solOk: false, tokenOk: false };
-  const live = await withTimeout(readLiveFromRpc(env, mintStr, pkStr), RPC_REFRESH_BUDGET_MS, rpcDead).catch(
-    () => rpcDead,
+  const rpcTimeoutFallback = { rrtt: null as number | null, sol: 0, solOk: false, tokenOk: false };
+  const budgetMs = custodialRpcRefreshBudgetMs(env);
+  const live = await withTimeout(readLiveFromRpc(env, mintStr, pkStr), budgetMs, rpcTimeoutFallback).catch(
+    () => rpcTimeoutFallback,
   );
   const rpc_ok = live.solOk || live.tokenOk;
 
