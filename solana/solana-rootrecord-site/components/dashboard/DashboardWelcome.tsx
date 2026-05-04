@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { fetchCustodialInfo, getPortalToken } from '@/lib/rootrecordSession';
 import { getConnection } from '@/lib/solana';
@@ -79,45 +78,60 @@ export function DashboardWelcome() {
   }, [publicKey]);
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-8 md:px-8">
-      <Badge className="mb-3 border-sol-green/30 bg-sol-green/10 text-sol-green">Solana mainnet</Badge>
-      <h1 className="font-display text-3xl tracking-tight text-foreground md:text-4xl">Welcome</h1>
-      <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-        Use the sidebar for tools and pages. Program docs and on-chain references live in{' '}
-        <Link href="/operations" className="text-sol-green hover:underline">
+    <div className="mx-auto flex w-full max-w-2xl flex-col justify-center px-5 py-16 md:min-h-[min(70vh,32rem)] md:px-10 md:py-20">
+      <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-sol-green/90">
+        Solana mainnet
+      </p>
+      <h1 className="font-display mt-3 text-4xl tracking-tight text-foreground md:text-5xl">Hub</h1>
+      <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
+        Open a section from the sidebar, or jump to{' '}
+        <Link href="/tools" className="text-sol-green underline-offset-4 hover:underline">
+          all tools
+        </Link>
+        . Docs live in{' '}
+        <Link href="/operations" className="text-sol-green underline-offset-4 hover:underline">
           Operations
         </Link>
         .
       </p>
 
-      <div className="mt-6 rounded-lg border border-border/70 bg-card/30 px-4 py-3 text-sm space-y-2">
-        {connected && publicKey ? (
-          <p className="text-foreground/90">
-            <span className="text-muted-foreground">Wallet</span>{' '}
-            <span className="font-mono">{shortPk(publicKey.toBase58())}</span>
-            {solUi != null ? (
+      <dl className="mt-12 grid gap-6 text-sm md:grid-cols-2 md:gap-10">
+        <div className="space-y-1">
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Wallet</dt>
+          <dd className="font-mono text-[13px] text-foreground/95">
+            {connected && publicKey ? (
               <>
-                <span className="text-muted-foreground"> · </span>
-                <span>~{solUi} SOL</span>
+                {shortPk(publicKey.toBase58())}
+                {solUi != null ? (
+                  <span className="mt-1 block text-muted-foreground">
+                    Balance ~{solUi} SOL
+                  </span>
+                ) : null}
               </>
-            ) : null}
-          </p>
-        ) : (
-          <p className="text-muted-foreground">Connect a wallet in the header to sign transactions.</p>
-        )}
-        {hostedPk ? (
-          <p className="text-foreground/90">
-            <span className="text-muted-foreground">Hosted</span>{' '}
-            <span className="font-mono">{shortPk(hostedPk)}</span>
-          </p>
-        ) : null}
-      </div>
+            ) : (
+              <span className="text-muted-foreground">
+                Not connected — use <strong className="font-normal text-foreground/80">Select wallet</strong> in the header to sign.
+              </span>
+            )}
+          </dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Hosted</dt>
+          <dd className="font-mono text-[13px] text-foreground/95">
+            {hostedPk ? (
+              shortPk(hostedPk)
+            ) : (
+              <span className="text-muted-foreground">Sign in via Account when custodial is enabled.</span>
+            )}
+          </dd>
+        </div>
+      </dl>
 
-      <div className="mt-6 flex flex-wrap gap-3">
-        <Button asChild size="sm">
+      <div className="mt-14 flex flex-wrap gap-3">
+        <Button asChild size="default">
           <Link href="/create">Create token</Link>
         </Button>
-        <Button asChild size="sm" variant="outline">
+        <Button asChild size="default" variant="outline">
           <Link href="/tools">All tools</Link>
         </Button>
       </div>

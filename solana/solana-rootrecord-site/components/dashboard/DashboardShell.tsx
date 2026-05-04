@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Menu } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   DASHBOARD_HUB_ANCHORS,
-  DASHBOARD_SHELL_NAV,
+  getDashboardShellNav,
 } from '@/lib/dashboardShellNav';
 import { cn } from '@/lib/utils';
 
@@ -53,10 +53,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const isOperationsWiki = pathname === '/operations' || pathname.startsWith('/operations/');
 
   const onHub = pathname === '/dashboard';
+  const shellNav = useMemo(() => getDashboardShellNav(pathname), [pathname]);
 
   const NavBody = ({ onPick }: { onPick?: () => void }) => (
     <div className="flex flex-col gap-2 px-2 py-1.5">
-      {DASHBOARD_SHELL_NAV.map((group) => (
+      {shellNav.map((group) => (
         <section
           key={group.heading}
           className="rounded-lg border border-border/70 bg-[#070b0f] p-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"

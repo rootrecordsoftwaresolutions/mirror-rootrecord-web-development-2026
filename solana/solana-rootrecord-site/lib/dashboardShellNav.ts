@@ -31,6 +31,7 @@ function buildToolsNavItems(): ShellNavItem[] {
   return items;
 }
 
+/** Full sidebar: every tool under Tools (used off the Hub). */
 export const DASHBOARD_SHELL_NAV: ShellNavGroup[] = [
   {
     heading: 'Overview',
@@ -74,6 +75,20 @@ export const DASHBOARD_SHELL_NAV: ShellNavGroup[] = [
     ],
   },
 ];
+
+/**
+ * Sidebar for the current route. On Hub (`/dashboard`) the Tools group is only “All tools” so
+ * the page is not a wall of links; individual tools stay in the full nav everywhere else.
+ */
+export function getDashboardShellNav(pathname: string): ShellNavGroup[] {
+  const onHub = pathname === '/dashboard';
+  if (!onHub) return DASHBOARD_SHELL_NAV;
+  return DASHBOARD_SHELL_NAV.map((group) =>
+    group.heading === 'Tools'
+      ? { ...group, items: [{ href: '/tools', label: 'All tools' }] }
+      : group,
+  );
+}
 
 /** In-page sections on `/dashboard` (hash links). Empty — Hub is a single short screen. */
 export const DASHBOARD_HUB_ANCHORS: { hash: string; label: string }[] = [];

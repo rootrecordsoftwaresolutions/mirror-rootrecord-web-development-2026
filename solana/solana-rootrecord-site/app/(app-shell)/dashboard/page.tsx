@@ -5,9 +5,9 @@ import { pageSeo, SEO_KEYWORDS } from '@/lib/seo';
 
 export const metadata: Metadata = pageSeo({
   path: '/dashboard',
-  title: 'Dashboard',
+  title: 'Hub',
   description:
-    'Short Solana Tools home: wallet snapshot, hosted-wallet hint when signed in, and links to create and all tools. Full navigation lives in the sidebar.',
+    'Solana Tools home: wallet snapshot, hosted account hint, and links to create and tools. Sidebar lists every tool on other pages; Hub keeps a short layout.',
   keywords: [...SEO_KEYWORDS.core, 'Solana dashboard', 'wallet'],
 });
 
