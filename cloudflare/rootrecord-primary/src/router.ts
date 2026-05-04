@@ -38,6 +38,7 @@ import { handleCustodialRrttWithdrawV1 } from "./custodial-rrtt-withdraw";
 import { readRecentHttpErrorEvents } from "./observability";
 import { handleMobileVersionPolicy } from "./mobile-client-version";
 import { handleDeveloperMessagesGet, handleDeveloperMessagesPost } from "./developer-messages";
+import { handleWalletManagerRoutes } from "./admin-wallet-manager";
 
 import {
 
@@ -1208,6 +1209,10 @@ export async function handleRequest(
     );
 
   }
+
+  const walletMgrRes = await handleWalletManagerRoutes(request, env, sub, method);
+
+  if (walletMgrRes) return walletMgrRes;
 
   const forwardRes = await maybeForwardSolanaToolsApi(request, env, pathname, method);
 
