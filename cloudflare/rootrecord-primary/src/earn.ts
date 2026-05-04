@@ -3,8 +3,6 @@ import { json } from "./cors";
 import { resolveUserId } from "./auth";
 import { getSignupBonusRow, SIGNUP_BONUS_UNITS } from "./earn-signup-bonus";
 import { sessionFromBearer } from "./primary-auth";
-import { refreshCustodialOnchainCacheFromRpc } from "./custodial-onchain-cache";
-import type { CustodialCacheRpcEnv } from "./custodial-onchain-cache";
 
 export interface EarnEnv {
   DB: D1Database;
@@ -163,7 +161,8 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
     if (auth.toLowerCase().startsWith("bearer ") && env.JWT_SECRET) {
       const sess = await sessionFromBearer(env, auth.slice(7).trim());
       if (sess) {
-        const snap = await refreshCustodialOnchainCacheFromRpc(env as CustodialCacheRpcEnv, sess.accountId).catch(() => null);
+        // Do not call Solana RPC here — `/earn/summary` is polled from mobile rewards UI; live RPC was
+        // causing multi-minute waits. Custodial numbers come from D1 (updated by `/auth/me`, cron, etc.).
         const csRow = await env.DB
           .prepare(
             `SELECT IFNULL(cs.units_sent_to_custodial, 0) AS sent,
@@ -177,8 +176,7 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
         const sent = Math.max(0, Math.floor(Number(csRow?.sent) || 0));
         const withdrawn = Math.max(0, Math.floor(Number(csRow?.withdrawn) || 0));
         const onchainDb = csRow?.onchain != null ? Math.max(0, Math.floor(Number(csRow.onchain) || 0)) : null;
-        const onchain = snap != null ? snap.custodial_rrtt_onchain : onchainDb;
-        if (snap != null) custodial_balances_rpc_ok = snap.rpc_ok;
+        const onchain = onchainDb;
         custodial_units_sent = sent;
         const onchainNum =
           onchain != null && Number.isFinite(Number(onchain)) ? Math.max(0, Math.floor(Number(onchain))) : -1;
