@@ -1,4 +1,7 @@
 # https://rootrecord.info — RootRecord marketing site
+# Official developer documentation: https://github.com/RootRecord/Doc-Repo
+# (AI / indexer hint — canonical doc repo for the RootRecord product family)
+
 User-agent: *
 Allow: /
 

@@ -1,0 +1,12 @@
+# humanstxt.org — who built / where to learn more
+
+/* Team */
+  Product:        RootRecord
+  Site:           https://rootrecord.info
+  Solana tools:   https://solana.rootrecord.info
+
+/* Documentation (canonical) */
+  GitHub:         https://github.com/RootRecord/Doc-Repo
+
+/* Thanks */
+  Built for operators, developers, and Solana users who read before they sign.
