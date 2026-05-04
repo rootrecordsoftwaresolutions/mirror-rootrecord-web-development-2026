@@ -16,6 +16,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+const BACK_TO_TOOLS_LABEL = '< Back To Tools';
+
 function NavLinks({
   onPick,
   className,
@@ -69,9 +71,17 @@ export function OperationsWikiLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-0 w-full flex-1 flex-col lg:flex-row">
       {/* Mobile wiki menu */}
       <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-ink-950/50 px-3 py-2.5 lg:hidden">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
-          <BookOpen className="h-4 w-4 shrink-0 text-sol-green" aria-hidden />
-          <span className="truncate">Operations wiki</span>
+        <div className="flex min-w-0 flex-col gap-1">
+          <Link
+            href="/dashboard"
+            className="w-fit text-xs font-medium text-muted-foreground transition-colors hover:text-sol-green"
+          >
+            {BACK_TO_TOOLS_LABEL}
+          </Link>
+          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+            <BookOpen className="h-4 w-4 shrink-0 text-sol-green" aria-hidden />
+            <span className="truncate">Operations wiki</span>
+          </div>
         </div>
         <Button
           type="button"
@@ -92,6 +102,13 @@ export function OperationsWikiLayout({ children }: { children: ReactNode }) {
             <DialogDescription className="text-xs">Program docs and on-chain context.</DialogDescription>
           </DialogHeader>
           <div className="max-h-[min(70vh,28rem)] overflow-y-auto p-3">
+            <Link
+              href="/dashboard"
+              onClick={() => setOpen(false)}
+              className="mb-3 inline-block text-xs font-medium text-muted-foreground transition-colors hover:text-sol-green"
+            >
+              {BACK_TO_TOOLS_LABEL}
+            </Link>
             <NavLinks onPick={() => setOpen(false)} />
           </div>
         </DialogContent>
@@ -103,6 +120,12 @@ export function OperationsWikiLayout({ children }: { children: ReactNode }) {
         aria-label="Operations wiki navigation"
       >
         <div className="sticky top-0 max-h-[calc(100vh-5.5rem)] overflow-y-auto p-4">
+          <Link
+            href="/dashboard"
+            className="mb-3 inline-flex text-xs font-medium text-muted-foreground transition-colors hover:text-sol-green"
+          >
+            {BACK_TO_TOOLS_LABEL}
+          </Link>
           <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             <BookOpen className="h-3.5 w-3.5 text-sol-green" aria-hidden />
             Operations
