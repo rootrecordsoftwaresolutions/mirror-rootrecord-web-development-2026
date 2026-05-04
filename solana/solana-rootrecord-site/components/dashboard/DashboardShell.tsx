@@ -41,13 +41,23 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const onHub = pathname === '/dashboard';
 
   const NavBody = ({ onPick }: { onPick?: () => void }) => (
-    <div className="flex flex-col gap-2.5 px-2 py-1.5">
+    <div className="flex flex-col gap-2 px-2 py-1.5">
       {DASHBOARD_SHELL_NAV.map((group) => (
-        <div key={group.heading}>
-          <div className="mb-0.5 px-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/90">
-            {group.heading}
+        <section
+          key={group.heading}
+          className="rounded-lg border border-border/70 bg-[#070b0f] p-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
+          aria-labelledby={`nav-group-${group.heading.replace(/\s+/g, '-').toLowerCase()}`}
+        >
+          <div className="mb-1 flex items-center gap-2 border-b border-border/50 px-1 pb-1">
+            <span className="h-2 w-0.5 shrink-0 rounded-full bg-sol-green/80" aria-hidden />
+            <h3
+              id={`nav-group-${group.heading.replace(/\s+/g, '-').toLowerCase()}`}
+              className="text-[9px] font-bold uppercase tracking-[0.2em] text-foreground/85"
+            >
+              {group.heading}
+            </h3>
           </div>
-          <div className="flex flex-col gap-px">
+          <div className="flex flex-col gap-px px-0.5">
             {group.items
               .filter((item) => item.href !== '/my-actions' || connected)
               .map((item) => {
@@ -70,11 +80,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               })}
           </div>
           {group.heading === 'Overview' && onHub ? (
-            <div className="mt-1.5 border-t border-border/60 pt-1.5">
-              <div className="mb-0.5 px-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
-                On this page
+            <div className="mt-1.5 rounded-md border border-border/40 bg-black/25 p-1">
+              <div className="mb-0.5 flex items-center gap-2 border-b border-border/40 px-1 pb-0.5">
+                <span className="h-2 w-0.5 shrink-0 rounded-full bg-muted-foreground/50" aria-hidden />
+                <div className="text-[8px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  On this page
+                </div>
               </div>
-              <div className="flex flex-col gap-px">
+              <div className="flex flex-col gap-px pt-0.5">
                 {DASHBOARD_HUB_ANCHORS.map((a) => (
                   <Link
                     key={a.hash}
@@ -88,7 +101,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </div>
             </div>
           ) : null}
-        </div>
+        </section>
       ))}
     </div>
   );
