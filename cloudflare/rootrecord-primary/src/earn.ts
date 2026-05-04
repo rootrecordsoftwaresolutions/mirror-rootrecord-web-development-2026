@@ -203,7 +203,7 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
     custodial_balances_rpc_ok ||
     (custodial_onchain_rrtt != null && Number.isFinite(Number(custodial_onchain_rrtt))) ||
     custodial_pending_units < balance;
-  /** What users should see as “your RRTT total” after treasury→custodial: pending + SPL in hosted wallet (not lifetime ledger alone). */
+  /** What users should see as “your RRTT total” after treasury→custodial: pending + SPL in RootRecord Wallet (not lifetime ledger alone). */
   const balance_display = Math.max(
     0,
     Math.floor(hasCustodialSlice ? custodial_sum_ledger_and_wallet_units : balance),
