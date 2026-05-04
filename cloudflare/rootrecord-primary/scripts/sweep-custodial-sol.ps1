@@ -1,36 +1,69 @@
-# Sweep native SOL from all D1 custodial wallets (internal_solana_wallets) to one address.
-# Requires: Worker deployed with POST /api/internal/sweep-custodial-sol-all
-# Secrets on Worker: RR_PUSH_ADMIN_SECRET, RRTT_TREASURY_SECRET_KEY_B58, INTERNAL_WALLET_ENC_KEY_B64, SOLANA_RPC_URL (recommended)
+# Dry-run or live native SOL sweep: all custodial wallets -> destination (operator).
+# Loads RR_PUSH_ADMIN_SECRET from repo-root credentials.env (never commit secrets).
+# Default destination = public treasury wallet (same default as Solana Tools tokenomics / ecosystem constants).
 #
-# Usage (dry run first):
-#   $env:RR_PUSH_ADMIN_SECRET = "..."   # same as X-RR-Push-Admin-Key for other internal routes
-#   .\scripts\sweep-custodial-sol.ps1 -Destination "3QG6gVk3fdimzQaKX9zf7J6kCs5DRLKg1RNea3VBosDJ" -DryRun
-# Live (default: full native balance; treasury pays fee):
-#   .\scripts\sweep-custodial-sol.ps1 -Destination "3QG6gVk3fdimzQaKX9zf7J6kCs5DRLKg1RNea3VBosDJ"
-# Legacy: only send balance minus rent-exempt minimum:
-#   .\scripts\sweep-custodial-sol.ps1 -Destination "..." -RespectRentFloor
-
+# Usage:
+#   .\scripts\sweep-custodial-sol.ps1              # dry run
+#   .\scripts\sweep-custodial-sol.ps1 -Live      # REAL chain transfers
+#   .\scripts\sweep-custodial-sol.ps1 -Destination "OtherPubkey..."
+#
 param(
-  [Parameter(Mandatory = $true)][string]$Destination,
-  [string]$ApiBase = "https://api.rootrecord.info",
-  [switch]$DryRun,
-  [switch]$RespectRentFloor
+  [string] $Destination = "3QG6gVk3fdimzQaKX9zf7J6kCs5DRLKg1RNea3VBosDJ",
+  [switch] $Live
 )
 
-$secret = $env:RR_PUSH_ADMIN_SECRET
-if (-not $secret) {
-  Write-Error "Set RR_PUSH_ADMIN_SECRET in the environment."
-  exit 1
+$ErrorActionPreference = "Stop"
+
+$repoRoot = $null
+$probe = $PSScriptRoot
+for ($i = 0; $i -le 16; $i++) {
+  $tryCred = Join-Path $probe "credentials.env"
+  if (Test-Path -LiteralPath $tryCred) {
+    $repoRoot = $probe
+    break
+  }
+  $parent = Split-Path $probe -Parent
+  if (-not $parent -or $parent -eq $probe) { break }
+  $probe = $parent
+}
+if (-not $repoRoot) {
+  throw "credentials.env not found (walk parents from $($PSScriptRoot))."
 }
 
-$body = @{
-  destination          = $Destination
-  dry_run              = [bool]$DryRun
-  respect_rent_floor   = [bool]$RespectRentFloor
-} | ConvertTo-Json -Compress
-$uri = "$ApiBase/api/internal/sweep-custodial-sol-all"
+Get-Content (Join-Path $repoRoot "credentials.env") | ForEach-Object {
+  $line = $_.Trim()
+  if (-not $line -or $line.StartsWith("#")) { return }
+  $p = $line.IndexOf("=")
+  if ($p -gt 0) {
+    $k = $line.Substring(0, $p).Trim()
+    $v = $line.Substring($p + 1).Trim()
+    Set-Item -Path "Env:$k" -Value $v
+  }
+}
 
-Invoke-RestMethod -Uri $uri -Method Post -Headers @{
-  "X-RR-Push-Admin-Key" = $secret
-  "Content-Type"        = "application/json"
-} -Body $body | ConvertTo-Json -Depth 12
+$admin = [string]$env:RR_PUSH_ADMIN_SECRET
+if (-not $admin -or $admin.Length -lt 8) {
+  throw "RR_PUSH_ADMIN_SECRET missing from credentials.env (or too short)."
+}
+
+$uri = "https://api.rootrecord.info/api/internal/sweep-custodial-sol-all"
+$headers = @{
+  "X-RR-Push-Admin-Key" = $admin
+}
+$bodyObj = @{
+  destination        = $Destination
+  dry_run            = -not $Live
+  respect_rent_floor = $false
+}
+
+Write-Host "POST $uri"
+Write-Host "destination=$Destination dry_run=$(-not $Live) respect_rent_floor=false"
+
+try {
+  $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -ContentType "application/json; charset=utf-8" -Body ($bodyObj | ConvertTo-Json -Compress)
+  $response | ConvertTo-Json -Depth 20
+} catch {
+  $r = $_.ErrorDetails.Message
+  if ($r) { Write-Host $r }
+  else { throw $_ }
+}
