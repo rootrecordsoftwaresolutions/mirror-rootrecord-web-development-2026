@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WalletMultiButton } from '@/components/wallet/WalletButton';
+import { MintFromWalletField } from '@/components/wallet/MintFromWalletField';
 import { cn } from '@/lib/utils';
 
 import {
@@ -40,6 +41,7 @@ import {
   REMOVE_LIQUIDITY_FEE_SOL,
   SOLANA_NETWORK,
 } from '@/lib/solana';
+import { readRecentCpmmPoolIds, rememberCpmmPoolId } from '@/lib/recentCpmmPools';
 
 type LiqTab = 'create' | 'add' | 'remove';
 
@@ -84,6 +86,12 @@ function LiquidityPageInner() {
   const [busyRemove, setBusyRemove] = useState(false);
   const [lastRemoveFeeTx, setLastRemoveFeeTx] = useState<string | null>(null);
   const [lastRemoveTx, setLastRemoveTx] = useState<string | null>(null);
+
+  const [recentPoolIds, setRecentPoolIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setRecentPoolIds(readRecentCpmmPoolIds());
+  }, []);
 
   useEffect(() => {
     const m = params.get('mint')?.trim();
@@ -207,6 +215,8 @@ function LiquidityPageInner() {
       if (feeTxId) setLastFeeTx(feeTxId);
       setLastPoolTx(poolTxId);
       setLastPool(pid);
+      rememberCpmmPoolId(pid);
+      setRecentPoolIds(readRecentCpmmPoolIds());
       toast.success('Pool created — your pair is live on Raydium CPMM');
       if (wallet.publicKey) {
         logSolanaSiteAction({
@@ -250,6 +260,8 @@ function LiquidityPageInner() {
     try {
       const pool = await fetchCpmmPoolById(wallet, poolId.trim());
       setLoadedPool(pool);
+      rememberCpmmPoolId(pool.id);
+      setRecentPoolIds(readRecentCpmmPoolIds());
       toast.success(
         liqTab === 'remove'
           ? 'Pool loaded — enter LP amount to remove'
@@ -494,17 +506,14 @@ function LiquidityPageInner() {
         <CardContent className="grid gap-6">
           {liqTab === 'create' && (
             <>
-              <div className="grid gap-2">
-                <Label htmlFor="liq-mint">Your token mint (base)</Label>
-                <Input
-                  id="liq-mint"
-                  data-testid="launch-mint"
-                  className="font-mono text-sm"
-                  placeholder="Base mint address (SPL or Token-2022)"
-                  value={mint}
-                  onChange={(e) => setMint(e.target.value)}
-                />
-              </div>
+              <MintFromWalletField
+                id="liq-mint"
+                label="Your token mint (base)"
+                value={mint}
+                onChange={setMint}
+                placeholder="Base mint address (SPL or Token-2022)"
+                inputTestId="launch-mint"
+              />
 
               <div className="grid gap-2">
                 <Label htmlFor="liq-pair">Pair with</Label>
@@ -524,17 +533,14 @@ function LiquidityPageInner() {
               </div>
 
               {quoteKind === 'custom' && (
-                <div className="grid gap-2">
-                  <Label htmlFor="liq-quote-mint">Quote token mint</Label>
-                  <Input
-                    id="liq-quote-mint"
-                    data-testid="launch-quote-mint"
-                    className="font-mono text-sm"
-                    placeholder="Mint to pair against (not your base mint)"
-                    value={quoteCustomMint}
-                    onChange={(e) => setQuoteCustomMint(e.target.value)}
-                  />
-                </div>
+                <MintFromWalletField
+                  id="liq-quote-mint"
+                  label="Quote token mint"
+                  value={quoteCustomMint}
+                  onChange={setQuoteCustomMint}
+                  placeholder="Mint to pair against (not your base mint)"
+                  inputTestId="launch-quote-mint"
+                />
               )}
 
               <div className="grid gap-2">
@@ -623,6 +629,25 @@ function LiquidityPageInner() {
             <>
               <div className="grid gap-2">
                 <Label htmlFor="liq-pool-id">Pool address (Raydium CPMM)</Label>
+                {recentPoolIds.length > 0 ? (
+                  <select
+                    aria-label="Pick a recent pool from this browser"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      if (v) setPoolId(v);
+                      e.currentTarget.selectedIndex = 0;
+                    }}
+                  >
+                    <option value="">Recent pool (this session / browser)…</option>
+                    {recentPoolIds.map((id) => (
+                      <option key={id} value={id}>
+                        {id.length > 20 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 <Input
                   id="liq-pool-id"
                   data-testid="add-liq-pool-id"

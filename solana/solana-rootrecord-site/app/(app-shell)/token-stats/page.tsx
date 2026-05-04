@@ -11,8 +11,7 @@ import {
   CardTitle,
   CardContent,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { MintFromWalletField } from '@/components/wallet/MintFromWalletField';
 
 export default function TokenStatsLandingPage() {
   const router = useRouter();
@@ -51,18 +50,15 @@ export default function TokenStatsLandingPage() {
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="mint">SPL mint</Label>
-              <Input
+              <MintFromWalletField
                 id="mint"
-                placeholder="So11111111111111111111111111111111111111112"
+                label="SPL mint"
                 value={mint}
-                onChange={(e) => {
-                  setMint(e.target.value);
+                onChange={(v) => {
+                  setMint(v);
                   setErr(null);
                 }}
-                className="font-mono text-sm"
-                autoComplete="off"
-                spellCheck={false}
+                placeholder="So11111111111111111111111111111111111111112"
               />
               {err ? <p className="text-sm text-rose-400">{err}</p> : null}
             </div>

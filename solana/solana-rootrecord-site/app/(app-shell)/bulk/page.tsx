@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { WalletMultiButton } from '@/components/wallet/WalletButton';
+import { MintFromWalletField } from '@/components/wallet/MintFromWalletField';
 
 import {
   BULK_FEE_PER_100_SOL,
@@ -393,14 +394,13 @@ export default function BulkSolPage() {
 
           {assetMode === 'token' && (
             <div className="grid gap-2">
-              <Label htmlFor="bulk-mint">Mint address</Label>
-              <Input
+              <MintFromWalletField
                 id="bulk-mint"
-                data-testid="bulk-mint"
-                className="font-mono text-sm"
-                placeholder="Token mint (base58)"
+                label="Mint address"
                 value={mintInput}
-                onChange={(e) => setMintInput(e.target.value)}
+                onChange={setMintInput}
+                placeholder="Token mint (base58)"
+                inputTestId="bulk-mint"
               />
               {mintBusy && (
                 <span className="text-[11px] text-muted-foreground">Resolving mint…</span>

@@ -39,6 +39,7 @@ import {
   parseListingFieldsFromJson,
 } from '@/lib/metadataOffchainSync';
 import { ImageDropzone } from '@/components/create/ImageDropzone';
+import { MintFromWalletField } from '@/components/wallet/MintFromWalletField';
 import {
   withdrawWithheldFromMint,
   harvestWithheldToMint,
@@ -659,12 +660,13 @@ export function ToolDialog({ kind, initialMint, onClose }: Props) {
 
         <div className="grid gap-4">
           <div className="grid gap-2">
-            <Label>Mint address</Label>
-            <Input
-              data-testid="tool-mint-input"
-              placeholder="Mint pubkey"
+            <MintFromWalletField
+              id="tool-mint"
+              label="Mint address"
               value={mint}
-              onChange={(e) => setMint(e.target.value.trim())}
+              onChange={(v) => setMint(v.trim())}
+              placeholder="Mint pubkey (paste or pick above)"
+              inputTestId="tool-mint-input"
             />
             {[
               'mint-more',
@@ -679,8 +681,9 @@ export function ToolDialog({ kind, initialMint, onClose }: Props) {
               'update-fee-config',
             ].includes(kind) && (
               <p className="text-[11px] text-muted-foreground">
-                Use the <strong className="text-foreground/90">mint</strong> address from
-                Solscan or your launch dialog — not your wallet.
+                Pick the <strong className="text-foreground/90">mint</strong> from your connected or
+                hosted wallet when it appears in the list, or paste the mint from Solscan / your launch
+                dialog (not your wallet address).
                 {meta.t2022
                   ? ' Must be a Token-2022 mint.'
                   : kind === 'update-metadata' || kind === 'lock-metadata'
