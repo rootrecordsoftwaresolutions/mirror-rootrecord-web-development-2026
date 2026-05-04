@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { JupiterWalletPromo } from '@/components/JupiterWalletPromo';
-import { RrttTokenStatsPromo } from '@/components/RrttTokenStatsPromo';
 
 export async function generateMetadata(): Promise<Metadata> {
   return pageSeo({
@@ -116,14 +115,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* WALLET + RRTT stats */}
+      {/* WALLET */}
       <section
         className="container pt-4 pb-16 md:pt-2 md:pb-20"
         aria-labelledby="jupiter-wallet-heading"
       >
-        <div className="grid gap-6 lg:grid-cols-2 lg:items-stretch">
+        <div className="max-w-2xl">
           <JupiterWalletPromo variant="featured" />
-          <RrttTokenStatsPromo />
         </div>
       </section>
 

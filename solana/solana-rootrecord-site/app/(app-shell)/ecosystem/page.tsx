@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
 
-import { RrttTokenStatsPromo } from '@/components/RrttTokenStatsPromo';
 import {
   Card,
   CardContent,
@@ -48,12 +47,10 @@ export default function EcosystemPage() {
           <strong className="text-foreground">{ECOSYSTEM_LISTING_NAME}</strong> (
           <span className="font-mono text-foreground/90">{ECOSYSTEM_LISTING_SYMBOL}</span>) is the
           Metaplex-listed SPL mint RootRecord uses for treasury-held inventory, Raydium CPMM legs, and
-          custodial / earn accounting. Figures below read from public RPC; explorers are the source of
-          truth for signatures and pool state.
+          custodial / earn accounting. Solscan links below are the source of truth for balances, reserves,
+          and transaction history.
         </p>
       </header>
-
-      <RrttTokenStatsPromo />
 
       <Card>
         <CardHeader>
