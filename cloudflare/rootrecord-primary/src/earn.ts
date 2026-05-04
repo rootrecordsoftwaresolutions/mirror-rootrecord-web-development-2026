@@ -213,6 +213,8 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
     {
       balance,
       balance_display,
+      /** Mobile `rewardsFormat.js` only renders pending/wallet when this is true. */
+      custodial_summary_attached: true,
       custodial_pending_units,
       custodial_units_sent,
       custodial_available_withdraw_units,
