@@ -1109,11 +1109,14 @@ export type SweepCustodialSolRowResult = {
 
 /**
  * POST `/api/internal/sweep-custodial-sol-all` — operator only (`X-RR-Push-Admin-Key`).
- * Sends **native SOL** from every `internal_solana_wallets` row to `destination`, leaving each
- * custodial account **rent-exempt** (minimum balance for a 0-byte system account). Treasury pays
+ * Sends **native SOL** from every `internal_solana_wallets` row to `destination`. Treasury pays
  * network fees (`RRTT_TREASURY_SECRET_KEY_B58` must be set and funded).
  *
- * Body: `{ destination: string, dry_run?: boolean }`
+ * By default each transfer moves the **entire** `getBalance` lamports (custodial can go to zero;
+ * fee payer is treasury). Set `respect_rent_floor: true` to keep the legacy behavior that only
+ * sends `balance - rentExemptMinimum`.
+ *
+ * Body: `{ destination: string, dry_run?: boolean, respect_rent_floor?: boolean }`
  */
 export async function handleSweepCustodialSolAllRoute(
   request: Request,
@@ -1132,7 +1135,7 @@ export async function handleSweepCustodialSolAllRoute(
     return json({ ok: false, detail: has ? "Invalid admin key." : "Missing X-RR-Push-Admin-Key header." }, 401);
   }
 
-  let body: { destination?: string; dry_run?: boolean };
+  let body: { destination?: string; dry_run?: boolean; respect_rent_floor?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1149,6 +1152,7 @@ export async function handleSweepCustodialSolAllRoute(
     return json({ ok: false, detail: "Invalid destination pubkey." }, 422);
   }
   const dryRun = Boolean(body.dry_run);
+  const respectRentFloor = Boolean(body.respect_rent_floor);
 
   const dummyStats: RrttCronRunStats = {
     skipped_no_mint: false,
@@ -1235,12 +1239,14 @@ export async function handleSweepCustodialSolAllRoute(
       continue;
     }
     base.balance_lamports_before = bal;
-    const toSend = bal - minRent;
+    const toSend = respectRentFloor ? bal - minRent : bal;
     if (toSend <= 0) {
       results.push({
         ...base,
         lamports_sent: "0",
-        skipped: `nothing to send after rent floor (${minRent} lamports)`,
+        skipped: respectRentFloor
+          ? `nothing to send after rent floor (${minRent} lamports)`
+          : "zero balance",
       });
       continue;
     }
@@ -1316,6 +1322,7 @@ export async function handleSweepCustodialSolAllRoute(
     `**Solana — custodial SOL sweep (operator)**\n` +
     `**Destination:** \`${destPk.toBase58()}\`\n` +
     `**Dry run:** ${dryRun}\n` +
+    `**Respect rent floor:** ${respectRentFloor}\n` +
     `**Wallets scanned:** ${list.length}\n` +
     `**Transfers confirmed:** ${confirmed}\n` +
     `**Total lamports (planned or sent):** ${totalLamports.toString()}\n`;
@@ -1325,6 +1332,7 @@ export async function handleSweepCustodialSolAllRoute(
     {
       ok: true,
       dry_run: dryRun,
+      respect_rent_floor: respectRentFloor,
       destination: destPk.toBase58(),
       min_rent_lamports: minRent,
       rpc_url_used: dummyStats.rpc_url_used,

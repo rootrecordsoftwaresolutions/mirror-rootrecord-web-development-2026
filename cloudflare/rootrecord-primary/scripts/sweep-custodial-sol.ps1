@@ -5,13 +5,16 @@
 # Usage (dry run first):
 #   $env:RR_PUSH_ADMIN_SECRET = "..."   # same as X-RR-Push-Admin-Key for other internal routes
 #   .\scripts\sweep-custodial-sol.ps1 -Destination "3QG6gVk3fdimzQaKX9zf7J6kCs5DRLKg1RNea3VBosDJ" -DryRun
-# Live:
+# Live (default: full native balance; treasury pays fee):
 #   .\scripts\sweep-custodial-sol.ps1 -Destination "3QG6gVk3fdimzQaKX9zf7J6kCs5DRLKg1RNea3VBosDJ"
+# Legacy: only send balance minus rent-exempt minimum:
+#   .\scripts\sweep-custodial-sol.ps1 -Destination "..." -RespectRentFloor
 
 param(
   [Parameter(Mandatory = $true)][string]$Destination,
   [string]$ApiBase = "https://api.rootrecord.info",
-  [switch]$DryRun
+  [switch]$DryRun,
+  [switch]$RespectRentFloor
 )
 
 $secret = $env:RR_PUSH_ADMIN_SECRET
@@ -20,7 +23,11 @@ if (-not $secret) {
   exit 1
 }
 
-$body = @{ destination = $Destination; dry_run = [bool]$DryRun } | ConvertTo-Json -Compress
+$body = @{
+  destination          = $Destination
+  dry_run              = [bool]$DryRun
+  respect_rent_floor   = [bool]$RespectRentFloor
+} | ConvertTo-Json -Compress
 $uri = "$ApiBase/api/internal/sweep-custodial-sol-all"
 
 Invoke-RestMethod -Uri $uri -Method Post -Headers @{
