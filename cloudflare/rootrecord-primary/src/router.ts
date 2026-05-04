@@ -27,9 +27,9 @@ import {
   handleSweepCustodialSolAllRoute,
   provisionCustodialWalletIfMissing,
 } from "./solana-internal-wallet";
+import { proxyTreasurySolanaTxRoutes } from "./treasury-solana-tx-proxy";
 import { handleSolanaSiteLogRoute } from "./solana-site-log";
 import { handleSolanaSiteTokenDiscordNotifyRoute } from "./solana-site-token-discord-notify";
-import { handleSolanaSiteEcosystemOtcRoutes } from "./solana-site-ecosystem-otc";
 import { maybeForwardSolanaToolsApi } from "./solana-tools-forward";
 import { handleSolanaAppActivityRoute } from "./solana-app-activity";
 import { handleSolanaLinkedWalletRoute } from "./solana-linked-wallet";
@@ -132,8 +132,8 @@ export interface Env {
   /**
    * When this Worker fronts the Solana Tools hostname, forward Next-only `/api/ecosystem/*` (and
    * selected `/api/solana-site/*` paths) to the Vercel origin — no trailing slash.
-   * Native Worker routes (no forward): POST `/api/solana-site/log`, POST `/api/solana-site/token-discord-notify`,
-   * and `/api/solana-site/ecosystem-otc*`. `wrangler secret put SOLANA_TOOLS_API_FORWARD_URL`
+   * Native Worker routes (no forward): POST `/api/solana-site/log`, POST `/api/solana-site/token-discord-notify`.
+   * `wrangler secret put SOLANA_TOOLS_API_FORWARD_URL`
    */
   SOLANA_TOOLS_API_FORWARD_URL?: string;
 
@@ -152,6 +152,9 @@ export interface Env {
   /** Treasury keypair secret key base58 (same encoding as Phantom export). */
   RRTT_TREASURY_SECRET_KEY_B58?: string;
 
+  /** Base URL of Worker `rootrecord-solana-tx` (no trailing slash) — treasury cron + internal POSTs proxy there. */
+  ROOTRECORD_SOLANA_TX_URL?: string;
+
   /**
    * Days without activity before scheduled purge (cron `45 8 * * * UTC`). Activity = latest session
    * touch, account `updated_at`, or `created_at`. Default 365. Min 30.
@@ -168,17 +171,6 @@ export interface Env {
   MIN_APP_VERSION_ACCOUNT_HUB?: string;
   PLAY_STORE_URL_TOKEN_MANAGER?: string;
   PLAY_STORE_URL_ACCOUNT_HUB?: string;
-
-  /** Bot token for `runDiscordDeveloperMessageSync` (`wrangler secret put DISCORD_BOT_TOKEN`). */
-  DISCORD_BOT_TOKEN?: string;
-  /** Guild channel ID to mirror into in-app developer messages (plain var). */
-  DISCORD_ANNOUNCEMENTS_CHANNEL_ID?: string;
-  /** Developer Portal application id (wrangler `[vars]`; optional for interactions later). */
-  DISCORD_APPLICATION_ID?: string;
-  /** Interactions signature verify key from Portal (hex); not used by dev-message cron. */
-  DISCORD_PUBLIC_KEY?: string;
-  /** Discord server (guild) id for documentation / future use. */
-  DISCORD_GUILD_ID?: string;
 
 }
 
@@ -971,6 +963,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   if (rrttCronRes) return rrttCronRes;
 
+  const treasuryProxyRes = await proxyTreasurySolanaTxRoutes(request, env, sub, method);
+
+  if (treasuryProxyRes) return treasuryProxyRes;
+
   const sweepCustodialSolRes = await handleSweepCustodialSolAllRoute(request, env, sub, method);
 
   if (sweepCustodialSolRes) return sweepCustodialSolRes;
@@ -999,10 +995,6 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   );
 
   if (solTokenDiscordRes) return solTokenDiscordRes;
-
-  const solOtcRes = await handleSolanaSiteEcosystemOtcRoutes(request, env, sub, method);
-
-  if (solOtcRes) return solOtcRes;
 
   const solAppActivityRes = await handleSolanaAppActivityRoute(request, env, sub, method);
 

@@ -10,8 +10,8 @@ compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-# NOAA push cadence + daily RRTT treasury → custodial sweep (07:00 UTC) + inactive-account purge (08:45 UTC) + Discord → dev messages (15m).
-crons = ["*/5 * * * *", "0 7 * * *", "45 8 * * *", "*/15 * * * *"]
+# `*/5` = NOAA + UTC :00 → SOL LP + :10 → RRTT/RRESERVE (solana-tx). Daily RRTT 07:00; inactive purge 08:45.
+crons = ["*/5 * * * *", "0 7 * * *", "45 8 * * *"]
 
 [[d1_databases]]
 binding = "DB"
@@ -38,7 +38,11 @@ STRIPE_PRICE_ID = "price_REPLACE_WITH_YOUR_STRIPE_PRICE_ID"
 STRIPE_PRICING_TABLE_ID = "prctbl_1TQJ0kIaRpbMiAovAUe3X3QJ"
 STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWxLXDgJR7kRNSBSM8sJ2Wat1zuC56iE4TCTyPfqmEfTT600cR21LwYA"
 
-# RRTT SPL (Solana mainnet): custodial balance cache + treasury→custodial cron (`RRTT_TREASURY_SECRET_KEY_B58` = secret only).
+# RRTT SPL (Solana mainnet): custodial balance cache + treasury→custodial cron.
+# Treasury **private key is never in this file** — set on the Worker only:
+#   wrangler secret put RRTT_TREASURY_SECRET_KEY_B58
+# Automated treasury Raydium LP + Discord developer feed: Worker `rootrecord-solana-tx` (plain var, no trailing slash):
+ROOTRECORD_SOLANA_TX_URL = "https://rootrecord-solana-tx.rootrecord.workers.dev"
 RRTT_MINT_BASE58 = "6KfGKe13ASrV5WHvChbapQXxxEFRNqwpwrdEVsX6RQMT"
 RRTT_DECIMALS = "9"
 # Native apps: GET /api/mobile/version-policy?app_id=… — bump when old builds must update.
@@ -55,14 +59,7 @@ PLAY_STORE_URL_ACCOUNT_HUB = "https://play.google.com/store/apps/details?id=com.
 #   Header: X-RR-Push-Admin-Key: <same as push-broadcast>
 #   JSON: { "title": "…", "body": "…", "app_scope": "all" | "weather" | "bm" | "token_manager" | "account_hub" }
 #
-# Discord → same feed (cron */15): Global Updates channel + `wrangler secret put DISCORD_BOT_TOKEN`.
-# Bot needs Message Content Intent + Read channel/history on that channel. Human posts only (bots skipped).
-# URL: https://discord.com/channels/1497039564345442406/1500286864119038103 (channel id is the last segment).
-DISCORD_ANNOUNCEMENTS_CHANNEL_ID = "1500286864119038103"
-# Developer Portal → General Information (not required for channel sync; documented for ops / future interactions).
-DISCORD_APPLICATION_ID = "1500289560343740566"
-DISCORD_PUBLIC_KEY = "7c708f3b7e1712bb90017ced01ec2d96304063d97c2faf6f18ef8da935c2da15"
-DISCORD_GUILD_ID = "1497039564345442406"
+# Discord developer feed sync → Worker `rootrecord-solana-tx` (same D1 `developer_messages`).
 
 # Internal custodial wallet encryption (AES-256-GCM). deploy.ps1 uploads INTERNAL_WALLET_ENC_KEY_B64
 # Failsafe: application code never DELETEs `internal_solana_wallets` (encrypted keys) — even on DELETE /v1/me / inactive purge.
@@ -83,9 +80,7 @@ DISCORD_GUILD_ID = "1497039564345442406"
 # Pruned daily (cron 45 8 * * *). Operator read: GET /api/internal/recent-http-errors?limit=50 (X-RR-Push-Admin-Key).
 # In Cloudflare Dashboard enable Workers Logs + optional Logpush to your SIEM for retention beyond the console.
 #
-# Treasury OTC D1 + history on this Worker (`ecosystem_otc_fulfillments`):
-#   wrangler d1 migrations apply root-record --remote
-#   (migrations 0012 + 0013 in ./migrations/)
+# Legacy D1 tables from older Solana-site flows may exist (`ecosystem_otc_fulfillments`); migrations 0012+0013.
 #
 # When the Solana Tools hostname proxies /api/* here first, forward Next-only routes to Vercel:
 #   wrangler secret put SOLANA_TOOLS_API_FORWARD_URL
@@ -95,6 +90,12 @@ DISCORD_GUILD_ID = "1497039564345442406"
 # (POST /api/internal/provision-custodial-wallets-missing, same X-RR-Push-Admin-Key as push-broadcast).
 # Run treasury SOL top-up + RRTT payout cron immediately (same as 07:00 UTC schedule):
 #   POST https://api.rootrecord.info/api/internal/run-rrtt-custodial-cron  (header X-RR-Push-Admin-Key: …)
+# Treasury checks (proxied to `ROOTRECORD_SOLANA_TX_URL`; schedules: SOL :00 UTC, RRTT/RRESERVE :10 UTC, both from `*/5`):
+#   POST https://api.rootrecord.info/api/internal/run-treasury-liquidity-check
+#   POST https://api.rootrecord.info/api/internal/run-treasury-sol-lp-check
+#   Header: X-RR-Push-Admin-Key (same as push-broadcast). Or call the solana-tx Worker `/api/internal/...` directly.
+# Optional SPL top-up when LP withdraw is not enough: `wrangler secret put TREASURY_MAINTENANCE_SOURCE_SECRET_KEY_B58`
+#   (Phantom-style base58 secret; pubkey must differ from treasury).
 #   powershell -NoProfile -File ./provision-custodial-backfill.ps1
 #
 # All-device FCM broadcast (POST /api/internal/push-broadcast):

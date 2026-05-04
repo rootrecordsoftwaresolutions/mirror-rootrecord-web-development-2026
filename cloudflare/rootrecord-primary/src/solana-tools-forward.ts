@@ -1,7 +1,7 @@
 /**
- * When solana.rootrecord.info (or similar) points at this Worker, browser calls like
- * POST /api/ecosystem/finalize-otc-checkout hit the Worker first. Those routes live on
- * Next.js (Vercel). If `SOLANA_TOOLS_API_FORWARD_URL` is set to the Vercel origin
+ * When solana.rootrecord.info (or similar) points at this Worker, some `/api/ecosystem/*`
+ * and `/api/solana-site/*` paths hit the Worker first. Next.js (Vercel) serves the app.
+ * If `SOLANA_TOOLS_API_FORWARD_URL` is set to the Vercel origin
  * (no trailing slash), forward unmatched tooling API requests there.
  * POST `/api/solana-site/token-discord-notify` is handled on the Worker (same auth as `/api/solana-site/log`), not forwarded.
  */
@@ -54,7 +54,6 @@ export async function maybeForwardSolanaToolsApi(
   // Handled natively on this Worker (do not forward).
   if (sub === "/solana-site/log" && method === "POST") return null;
   if (sub === "/solana-site/token-discord-notify" && method === "POST") return null;
-  if (sub.startsWith("/solana-site/ecosystem-otc")) return null;
 
   const url = new URL(request.url);
   const dest = `${base}${pathname}${url.search}`;
