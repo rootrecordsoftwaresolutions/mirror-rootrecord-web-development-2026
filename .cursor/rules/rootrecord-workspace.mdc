@@ -28,19 +28,20 @@ alwaysApply: true
 - Primary Worker: `Web/cloudflare/rootrecord-primary` is the canonical Worker (not any nested copies).
 - Marketing site: `Web/main/` (Cloudflare Pages `rootrecord-website`).
 - App build request Worker: `Web/cloudflare/rootrecord-app-build` (Worker name `rootrecord-app-build`; marketing form POST `/api/app-build-request` on Pages proxies to this Worker).
-- **Solana Tools Next.js app (public site):** **only** repo **`RootRecord/solana-rootrecord-site`** — https://github.com/RootRecord/solana-rootrecord-site (`main`). Vercel deploys from that repo. **Forbidden in `Web-Development-2026`:** editing, re-adding, or subtree-syncing a copy under `Web/solana/solana-rootrecord-site` (or `solanasite`, or `*solana*sync*` mirrors). If the user opens this workspace, Solana **site** code still lives **only** in that GitHub repo — clone it beside `Web/` if you need the tree.
+- **Solana Tools Next.js app (public site):** **only** **`RootRecord/solana-rootrecord-site`** — https://github.com/RootRecord/solana-rootrecord-site (`main`). Vercel runs on **`git push origin main`** from **that repo’s root** — same as any normal Next repo. **Forbidden:** edits or copies under `Web/solana/solana-rootrecord-site`, subtree deploy, `solana-site` remote on Web for shipping the site, `*-sync` / `*-tmp` trees, extra `git clone` per task, or worktree+robocopy “publish” pipelines (recovery-only, not routine).
 
 ### Solana Tools — agents (do not rediscover)
 
-- **Read first:** `Web/solana/SOLANA-SITE-CANONICAL-REPO.md` — single procedure; no subtree, no monorepo path for the app.
-- **Do not** `git subtree push`, add remote `solana-site` for deploy, or scaffold duplicate app trees “to sync.” **Do not** claim **`solana.rootrecord.info`** updated unless **`RootRecord/solana-rootrecord-site`** `main` was pushed.
-- **URLs:** public site is **`solana.rootrecord.info`**; marketing is separate (`Web/main/`).
+- **Read first:** `Web/solana/SOLANA-SITE-CANONICAL-REPO.md`
+- **Work:** exactly **one** existing local clone (ask user to open it in the workspace if missing). Shell cwd = that repo root before `git` / `pnpm`.
+- **Publish:** `git push origin main` from that repo. **Do not** claim **`solana.rootrecord.info`** updated unless that push succeeded.
+- **URLs:** **`solana.rootrecord.info`**; marketing is **`Web/main/`**.
 
 ## Build expectations
 
 - **Release APK/AAB staging (all apps):** `Mobile/builds/<token-manager|account-hub|business-manager|weather-manager>/` — see `Mobile/docs/RELEASE-BUILD-OUTPUTS.md` and `Mobile/scripts/build-all-release-to-builds.ps1`. Prefer this layout in docs and when attaching or uploading binaries built in this repo.
 - Use `pnpm` in Mobile repo.
-- Use `npm ci` for Cloudflare Workers; for the Solana **site** use `pnpm` in a **clone of** `RootRecord/solana-rootrecord-site` (not under `Web/solana/`).
+- Use `npm ci` for Cloudflare Workers; for the Solana **site** use `pnpm` in the **user’s single clone** of `RootRecord/solana-rootrecord-site` (never under `Web/solana/`).
 - If something fails, capture the exact command + error output and fix root cause (don’t “work around” by skipping checks).
 
 ## Communication
