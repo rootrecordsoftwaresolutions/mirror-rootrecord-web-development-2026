@@ -35,6 +35,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const { connected } = useWallet();
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  /** Operations wiki has its own tree; hide the tools sidebar here. */
+  const isOperationsWiki = pathname === '/operations' || pathname.startsWith('/operations/');
+
   const onHub = pathname === '/dashboard';
 
   const NavBody = ({ onPick }: { onPick?: () => void }) => (
@@ -91,42 +94,51 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="flex min-h-0 w-full max-w-full flex-1 flex-col bg-background lg:min-h-[calc(100vh-4rem)] lg:flex-row">
-      {/* Desktop sidebar */}
-      <aside
-        className="hidden w-[min(13.5rem,100%)] shrink-0 flex-col border-b border-border/60 bg-[#05080a] lg:flex lg:min-h-0 lg:border-b-0 lg:border-r lg:border-border/60"
-        aria-label="App navigation"
-      >
-        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto py-1" aria-label="Dashboard sections">
-          <NavBody />
-        </nav>
-      </aside>
+    <div
+      className={cn(
+        'flex min-h-0 w-full max-w-full flex-1 flex-col bg-background lg:min-h-[calc(100vh-4rem)]',
+        !isOperationsWiki && 'lg:flex-row',
+      )}
+    >
+      {!isOperationsWiki ? (
+        <>
+          {/* Desktop sidebar */}
+          <aside
+            className="hidden w-[min(13.5rem,100%)] shrink-0 flex-col border-b border-border/60 bg-[#05080a] lg:flex lg:min-h-0 lg:border-b-0 lg:border-r lg:border-border/60"
+            aria-label="App navigation"
+          >
+            <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto py-1" aria-label="Dashboard sections">
+              <NavBody />
+            </nav>
+          </aside>
 
-      {/* Mobile: open full nav (brand lives in site header only) */}
-      <div className="flex items-center justify-end gap-2 border-b border-border/60 bg-[#05080a] px-3 py-2 lg:hidden">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0 border-border bg-ink-900/80"
-          aria-label="Open navigation"
-          onClick={() => setSheetOpen(true)}
-        >
-          <Menu className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <Dialog open={sheetOpen} onOpenChange={setSheetOpen}>
-        <DialogContent className="max-h-[85vh] max-w-md gap-0 overflow-hidden border-border bg-ink-900 p-0 sm:max-w-md">
-          <DialogHeader className="border-b border-border px-5 py-4">
-            <DialogTitle>Navigation</DialogTitle>
-            <DialogDescription className="text-xs">All tools stay in this shell.</DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[min(70vh,28rem)] overflow-y-auto">
-            <NavBody onPick={() => setSheetOpen(false)} />
+          {/* Mobile: open full nav (brand lives in site header only) */}
+          <div className="flex items-center justify-end gap-2 border-b border-border/60 bg-[#05080a] px-3 py-2 lg:hidden">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 border-border bg-ink-900/80"
+              aria-label="Open navigation"
+              onClick={() => setSheetOpen(true)}
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+
+          <Dialog open={sheetOpen} onOpenChange={setSheetOpen}>
+            <DialogContent className="max-h-[85vh] max-w-md gap-0 overflow-hidden border-border bg-ink-900 p-0 sm:max-w-md">
+              <DialogHeader className="border-b border-border px-5 py-4">
+                <DialogTitle>Navigation</DialogTitle>
+                <DialogDescription className="text-xs">All tools stay in this shell.</DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[min(70vh,28rem)] overflow-y-auto">
+                <NavBody onPick={() => setSheetOpen(false)} />
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-gradient-to-b from-background to-ink-950/35">
         <div className="shrink-0 border-b border-border bg-ink-950/80 px-3 py-2 text-center text-[11px] text-muted-foreground sm:text-xs">
