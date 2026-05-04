@@ -58,6 +58,11 @@ export function Footer() {
             </div>
             <ul className="space-y-2">
               <li>
+                <Link href="/ecosystem" className="hover:text-sol-green">
+                  Ecosystem
+                </Link>
+              </li>
+              <li>
                 <Link href="/liquidity-timing" className="hover:text-sol-green">
                   Liquidity timing
                 </Link>

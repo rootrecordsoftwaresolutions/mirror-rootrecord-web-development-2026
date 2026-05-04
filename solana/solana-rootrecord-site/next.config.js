@@ -4,7 +4,6 @@ const nextConfig = {
   async redirects() {
     return [
       { source: '/start', destination: '/dashboard', permanent: true },
-      { source: '/ecosystem', destination: '/liquidity-timing', permanent: true },
     ];
   },
   webpack: (config) => {
