@@ -160,6 +160,8 @@ export type CustodialCacheRefreshResult = {
   sol_balance_lamports_cached: number;
   /** True if at least one of SOL or RRTT was read successfully from RPC this call. */
   rpc_ok: boolean;
+  /** True only when SPL balance for RRTT mint was read successfully (not SOL-only). */
+  token_rpc_ok: boolean;
   /** True if D1 row was updated from RPC. */
   refreshed: boolean;
 };
@@ -213,7 +215,8 @@ async function readLiveFromRpc(
   tokenOk: boolean;
 }> {
   const decimals = envDecimals(env);
-  let last: { rrtt: number | null; sol: number; solOk: boolean; tokenOk: boolean } = {
+  /** Do not return on SOL-only success — the next RPC may return SPL while this host rate-limits token methods. */
+  let merged: { rrtt: number | null; sol: number; solOk: boolean; tokenOk: boolean } = {
     rrtt: null,
     sol: 0,
     solOk: false,
@@ -222,22 +225,36 @@ async function readLiveFromRpc(
   for (const rpcUrl of rpcUrlCandidates(env)) {
     try {
       const r = await readLiveOnce(rpcUrl, mintStr, pkStr, decimals);
-      last = r;
-      if (r.solOk || r.tokenOk) return r;
+      if (r.solOk) {
+        merged.sol = r.sol;
+        merged.solOk = true;
+      }
+      if (r.tokenOk) {
+        merged.rrtt = r.rrtt;
+        merged.tokenOk = true;
+        return merged;
+      }
     } catch {
       /* try next RPC */
     }
   }
-  return last;
+  return merged;
 }
 
 /**
  * Every call: reads mainnet RPC for custodial SOL + RRTT mint balance (direct Solana JSON-RPC).
- * Throttles only **writes** to D1 (`cache_updated_at` / cache columns) so `/v1/me` + `/earn/summary` always get fresh numbers for the response.
+ * Throttles **writes** to D1 (12s) unless `bypassWriteThrottle` — so normal `/auth/me` waitUntil runs
+ * do not spam D1, while `/earn/summary` can force a row update when the app opens rewards.
  */
 export async function refreshCustodialOnchainCacheFromRpc(
   env: CustodialCacheRpcEnv,
   accountId: string,
+  opts?: {
+    /** Override env `CUSTODIAL_RPC_REFRESH_BUDGET_MS` for this call (e.g. `/earn/summary`). */
+    rpcBudgetMs?: number;
+    /** When true, always persist RPC results to D1 if Solana responded (skip 12s write throttle). */
+    bypassWriteThrottle?: boolean;
+  },
 ): Promise<CustodialCacheRefreshResult | null> {
   const mintStr = String(env.RRTT_MINT_BASE58 || "").trim();
   if (!mintStr) return null;
@@ -263,7 +280,13 @@ export async function refreshCustodialOnchainCacheFromRpc(
   const prevSol = prev?.sol_balance_lamports_cached != null ? Math.max(0, Math.floor(Number(prev.sol_balance_lamports_cached) || 0)) : 0;
 
   const rpcTimeoutFallback = { rrtt: null as number | null, sol: 0, solOk: false, tokenOk: false };
-  const budgetMs = custodialRpcRefreshBudgetMs(env);
+  const budgetMs =
+    opts?.rpcBudgetMs != null && Number.isFinite(Number(opts.rpcBudgetMs))
+      ? Math.min(
+          RPC_REFRESH_BUDGET_MAX_MS,
+          Math.max(RPC_REFRESH_BUDGET_MIN_MS, Math.floor(Number(opts.rpcBudgetMs))),
+        )
+      : custodialRpcRefreshBudgetMs(env);
   const live = await withTimeout(readLiveFromRpc(env, mintStr, pkStr), budgetMs, rpcTimeoutFallback).catch(
     () => rpcTimeoutFallback,
   );
@@ -273,13 +296,15 @@ export async function refreshCustodialOnchainCacheFromRpc(
   const solOut = live.solOk ? live.sol : prevSol;
 
   const ts = prev?.cache_updated_at ? Date.parse(String(prev.cache_updated_at)) : NaN;
-  const skipD1Write = Number.isFinite(ts) && Date.now() - ts < D1_WRITE_MIN_INTERVAL_MS;
+  const skipD1Write =
+    !opts?.bypassWriteThrottle && Number.isFinite(ts) && Date.now() - ts < D1_WRITE_MIN_INTERVAL_MS;
 
   if (!live.solOk && !live.tokenOk) {
     return {
       custodial_rrtt_onchain: rrttOut,
       sol_balance_lamports_cached: solOut,
       rpc_ok: false,
+      token_rpc_ok: false,
       refreshed: false,
     };
   }
@@ -289,6 +314,7 @@ export async function refreshCustodialOnchainCacheFromRpc(
       custodial_rrtt_onchain: rrttOut,
       sol_balance_lamports_cached: solOut,
       rpc_ok,
+      token_rpc_ok: live.tokenOk,
       refreshed: false,
     };
   }
@@ -314,6 +340,7 @@ export async function refreshCustodialOnchainCacheFromRpc(
     custodial_rrtt_onchain: rrttOut,
     sol_balance_lamports_cached: solOut,
     rpc_ok,
+    token_rpc_ok: live.tokenOk,
     refreshed: true,
   };
 }

@@ -4,7 +4,6 @@
  * If `SOLANA_TOOLS_API_FORWARD_URL` is set to the Vercel origin
  * (no trailing slash), forward unmatched tooling API requests there.
  * POST `/api/solana-site/token-discord-notify` is handled on the Worker (same auth as `/api/solana-site/log`), not forwarded.
- * GET `/api/solana-site/recent-tokens` is handled on the Worker (public feed for `/recent-tokens` SSR), not forwarded.
  */
 
 function apiSubpath(pathname: string): string {
@@ -55,7 +54,6 @@ export async function maybeForwardSolanaToolsApi(
   // Handled natively on this Worker (do not forward).
   if (sub === "/solana-site/log" && method === "POST") return null;
   if (sub === "/solana-site/token-discord-notify" && method === "POST") return null;
-  if (sub === "/solana-site/recent-tokens" && method === "GET") return null;
 
   const url = new URL(request.url);
   const dest = `${base}${pathname}${url.search}`;

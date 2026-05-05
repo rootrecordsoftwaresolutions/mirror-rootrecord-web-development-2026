@@ -29,7 +29,6 @@ import {
 } from "./solana-internal-wallet";
 import { proxyTreasurySolanaTxRoutes } from "./treasury-solana-tx-proxy";
 import { handleSolanaSiteLogRoute } from "./solana-site-log";
-import { handleSolanaSiteRecentTokensRoute } from "./solana-site-recent-tokens";
 import { handleSolanaSiteTokenDiscordNotifyRoute } from "./solana-site-token-discord-notify";
 import { maybeForwardSolanaToolsApi } from "./solana-tools-forward";
 import { handleSolanaAppActivityRoute } from "./solana-app-activity";
@@ -133,7 +132,7 @@ export interface Env {
   /**
    * When this Worker fronts the Solana Tools hostname, forward Next-only `/api/ecosystem/*` (and
    * selected `/api/solana-site/*` paths) to the Vercel origin — no trailing slash.
-   * Native Worker routes (no forward): POST `/api/solana-site/log`, POST `/api/solana-site/token-discord-notify`, GET `/api/solana-site/recent-tokens`.
+   * Native Worker routes (no forward): POST `/api/solana-site/log`, POST `/api/solana-site/token-discord-notify`.
    * `wrangler secret put SOLANA_TOOLS_API_FORWARD_URL`
    */
   SOLANA_TOOLS_API_FORWARD_URL?: string;
@@ -1005,10 +1004,6 @@ export async function handleRequest(
   );
 
   if (solTokenDiscordRes) return solTokenDiscordRes;
-
-  const solRecentRes = await handleSolanaSiteRecentTokensRoute(env, sub, method, q);
-
-  if (solRecentRes) return solRecentRes;
 
   const solAppActivityRes = await handleSolanaAppActivityRoute(request, env, sub, method);
 

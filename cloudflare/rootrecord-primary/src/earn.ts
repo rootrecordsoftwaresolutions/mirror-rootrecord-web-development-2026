@@ -2,6 +2,8 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { json } from "./cors";
 import { resolveUserId } from "./auth";
 import { getSignupBonusRow, SIGNUP_BONUS_UNITS } from "./earn-signup-bonus";
+import type { CustodialCacheRpcEnv } from "./custodial-onchain-cache";
+import { refreshCustodialOnchainCacheFromRpc } from "./custodial-onchain-cache";
 import { sessionFromBearer } from "./primary-auth";
 
 export interface EarnEnv {
@@ -10,7 +12,11 @@ export interface EarnEnv {
   SOLANA_RPC_URL?: string;
   RRTT_MINT_BASE58?: string;
   RRTT_DECIMALS?: string;
+  CUSTODIAL_RPC_REFRESH_BUDGET_MS?: string;
 }
+
+/** Bound Solana wait for `/earn/summary` custodial refresh (same order of magnitude as login cache). */
+const EARN_SUMMARY_CUSTODIAL_RPC_MS = 10_000;
 
 /** Per second of credited time on a route; 15 min = 900s → 900×20 = 18,000 units per page visit max. */
 const UNITS_PER_SECOND = 20;
@@ -161,8 +167,18 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
     if (auth.toLowerCase().startsWith("bearer ") && env.JWT_SECRET) {
       const sess = await sessionFromBearer(env, auth.slice(7).trim());
       if (sess) {
-        // Do not call Solana RPC here — `/earn/summary` is polled from mobile rewards UI; live RPC was
-        // causing multi-minute waits. Custodial numbers come from D1 (updated by `/auth/me`, cron, etc.).
+        // `/auth/me` refreshes this cache in `waitUntil` (after respond), so mobile often loaded
+        // `/earn/summary` before D1 updated. Await one bounded refresh here, then read `rr_earn_custodial_state`.
+        const cacheRes = await refreshCustodialOnchainCacheFromRpc(
+          env as EarnEnv & CustodialCacheRpcEnv,
+          sess.accountId,
+          {
+            rpcBudgetMs: EARN_SUMMARY_CUSTODIAL_RPC_MS,
+            bypassWriteThrottle: true,
+          },
+        ).catch(() => null);
+        if (cacheRes?.rpc_ok) custodial_balances_rpc_ok = true;
+
         const csRow = await env.DB
           .prepare(
             `SELECT IFNULL(cs.units_sent_to_custodial, 0) AS sent,
@@ -176,21 +192,31 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
         const sent = Math.max(0, Math.floor(Number(csRow?.sent) || 0));
         const withdrawn = Math.max(0, Math.floor(Number(csRow?.withdrawn) || 0));
         const onchainDb = csRow?.onchain != null ? Math.max(0, Math.floor(Number(csRow.onchain) || 0)) : null;
-        const onchain = onchainDb;
         custodial_units_sent = sent;
-        const onchainNum =
-          onchain != null && Number.isFinite(Number(onchain)) ? Math.max(0, Math.floor(Number(onchain))) : -1;
-        const availLedger = Math.max(0, sent - withdrawn);
-        /** Spendable RRTT = SPL balance in custodial wallet for this mint (withdraw UX matches wallet). */
-        custodial_available_withdraw_units = onchainNum >= 0 ? onchainNum : availLedger;
-        custodial_onchain_rrtt = onchain;
+
+        /** SPL whole units when the custodial refresh actually read token balances (includes legitimate 0). */
+        const rrttFromLiveRpc =
+          cacheRes?.token_rpc_ok === true && typeof cacheRes.custodial_rrtt_onchain === "number"
+            ? Math.max(0, Math.floor(cacheRes.custodial_rrtt_onchain))
+            : null;
+
+        let walletWithdrawUnits: number;
+        if (rrttFromLiveRpc !== null) {
+          walletWithdrawUnits = rrttFromLiveRpc;
+        } else if (onchainDb != null && onchainDb > 0) {
+          walletWithdrawUnits = onchainDb;
+        } else {
+          walletWithdrawUnits = 0;
+        }
+
+        custodial_available_withdraw_units = walletWithdrawUnits;
+        custodial_onchain_rrtt = rrttFromLiveRpc !== null ? rrttFromLiveRpc : onchainDb;
         /**
          * `balance` is lifetime earn credits; `sent` is how much was mirrored to custodial in DB.
          * Do not add balance + on-chain SPL (double-count). Headline total = not-yet-moved + in-wallet.
          */
         custodial_pending_units = Math.max(0, balance - sent);
-        custodial_sum_ledger_and_wallet_units =
-          custodial_pending_units + (onchainNum >= 0 ? onchainNum : 0);
+        custodial_sum_ledger_and_wallet_units = custodial_pending_units + walletWithdrawUnits;
       }
     }
   } catch (e) {
