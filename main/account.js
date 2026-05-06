@@ -256,10 +256,19 @@
   }
 
   function betaTesterRewardsValueHtml(earn) {
-    const a =
-      ' <a href="/beta-tester-rewards.html" style="color:var(--moss);text-decoration:underline;text-underline-offset:3px">Learn more</a>';
+    const moss = "color:var(--moss);text-decoration:underline;text-underline-offset:3px";
+    const program =
+      ' <a href="/beta-tester-rewards.html" style="' +
+      moss +
+      '">Beta tester rewards</a>';
+    const withdraw =
+      ' · <a href="https://solana.rootrecord.info/account" target="_blank" rel="noopener" style="' +
+      moss +
+      '">Withdraw on Solana</a>';
+    const note =
+      '<span class="note" style="display:block;margin-top:0.4rem;font-size:0.875rem;line-height:1.45">Full explanation and balance (same total) on the website. In-app rewards tabs were removed; apps may still earn in the background while you are signed in.</span>';
     if (!earn) {
-      return escapeHtml("—") + a;
+      return escapeHtml("—") + program + withdraw + note;
     }
     const n = Number(earn.balance);
     const b = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
@@ -267,7 +276,9 @@
       '<strong class="rewards-balance" data-testid="account-rewards-balance">' +
       escapeHtml(String(b.toLocaleString())) +
       "</strong>" +
-      a
+      program +
+      withdraw +
+      note
     );
   }
 
