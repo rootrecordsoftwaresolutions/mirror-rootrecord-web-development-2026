@@ -106,8 +106,9 @@ PLAY_STORE_URL_ACCOUNT_HUB = "https://play.google.com/store/apps/details?id=com.
 #
 # All-device FCM broadcast (POST /api/internal/push-broadcast):
 #   wrangler secret put RR_PUSH_ADMIN_SECRET
-# Wallet admin on Solana Tools (`/admin/wallet-admin`): production uses the same secret via server proxy —
-# set `RR_PUSH_ADMIN_SECRET` on Vercel (solana-rootrecord-site) to match this Worker secret.
+# Wallet admin on Solana Tools (`/admin/wallet-admin`): set a dedicated proxy secret (recommended):
+#   wrangler secret put WALLET_ADMIN_PROXY_SECRET
+# Same value on Vercel as WALLET_ADMIN_PROXY_SECRET. Fallback: reuse RR_PUSH_ADMIN_SECRET on Vercel + Worker.
 #   wrangler secret put FCM_SERVICE_ACCOUNT_JSON
 # (paste your Firebase service account JSON — one secret; optional split vars still supported)
 #

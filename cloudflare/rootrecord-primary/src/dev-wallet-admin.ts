@@ -12,7 +12,7 @@ import {
 } from "@solana/spl-token";
 
 import { json } from "./cors";
-import { verifyWorkerOpsAdmin } from "./push";
+import { verifyPushAdminKey, verifyWorkerOpsAdmin } from "./push";
 import { sessionFromBearer, type AuthEnv } from "./primary-auth";
 import { loadKeypairForAccount, type InternalWalletEnv } from "./solana-internal-wallet";
 
@@ -20,6 +20,8 @@ const ADMIN_EMAIL = "rootrecord@outlook.com";
 
 export type DevWalletAdminEnv = InternalWalletEnv & {
   DEV_WALLET_ADMIN_ENABLED?: string;
+  /** Optional: Solana site proxy only (`X-RR-Wallet-Admin-Key`). Prefer over reusing push-broadcast secret on Vercel. */
+  WALLET_ADMIN_PROXY_SECRET?: string;
 };
 
 function devEnabled(env: DevWalletAdminEnv): boolean {
@@ -40,9 +42,23 @@ async function requireDevWalletAdmin(env: DevWalletAdminEnv, request: Request) {
   if (!sess) return { ok: false as const, res: json({ detail: "Unauthorized" }, 401) };
   const email = String(sess.email || "").trim().toLowerCase();
   if (email !== ADMIN_EMAIL) return { ok: false as const, res: json({ detail: "Forbidden" }, 403) };
-  /** Prod: same secret as push-broadcast (`X-RR-Push-Admin-Key` / `RR_PUSH_ADMIN_SECRET`). Local: `DEV_WALLET_ADMIN_ENABLED=1`. */
-  const allowed = devEnabled(env) || (await verifyWorkerOpsAdmin(request, env));
-  if (!allowed) return { ok: false as const, res: json({ detail: "Not found" }, 404) };
+  const proxySecret = String(env.WALLET_ADMIN_PROXY_SECRET || "").trim();
+  const proxyOk =
+    proxySecret.length >= 8 && (await verifyPushAdminKey(request.headers.get("X-RR-Wallet-Admin-Key"), proxySecret));
+  const pushOk = await verifyWorkerOpsAdmin(request, env);
+  const allowed = devEnabled(env) || proxyOk || pushOk;
+  if (!allowed) {
+    return {
+      ok: false as const,
+      res: json(
+        {
+          detail:
+            "Wallet admin disabled: set Worker secret WALLET_ADMIN_PROXY_SECRET and the same value on Vercel, or align RR_PUSH_ADMIN_SECRET on Vercel with the Worker. Local dev: DEV_WALLET_ADMIN_ENABLED=1.",
+        },
+        403,
+      ),
+    };
+  }
   return { ok: true as const, sess };
 }
 

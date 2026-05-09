@@ -50,7 +50,7 @@ function timingSafeEqual(a: ArrayBuffer, b: ArrayBuffer): boolean {
 }
 
 /** Compare SHA-256(header) to SHA-256(secret) (constant-time). */
-async function verifyPushAdminKey(headerVal: string | null, secret: string): Promise<boolean> {
+export async function verifyPushAdminKey(headerVal: string | null, secret: string): Promise<boolean> {
   const h = (headerVal || "").trim();
   const s = (secret || "").trim();
   if (!h || !s) return false;

@@ -165,6 +165,9 @@ export interface Env {
    */
   DEV_WALLET_ADMIN_ENABLED?: string;
 
+  /** Solana site wallet-admin proxy (`X-RR-Wallet-Admin-Key`); optional `wrangler secret put WALLET_ADMIN_PROXY_SECRET`. */
+  WALLET_ADMIN_PROXY_SECRET?: string;
+
   /** Base URL of Worker `rootrecord-solana-tx` (no trailing slash) — treasury cron + internal POSTs proxy there. */
   ROOTRECORD_SOLANA_TX_URL?: string;
 
