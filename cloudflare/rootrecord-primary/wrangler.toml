@@ -18,6 +18,10 @@ binding = "DB"
 database_name = "root-record"
 database_id = "0b49c598-1f91-4a09-84a8-6ba8241c6df3"
 
+[[r2_buckets]]
+binding = "VOLCANO_PHOTOS"
+bucket_name = "rootrecord-volcano-photos"
+
 [vars]
 SITE_URL = "https://rootrecord.info"
 # AccuWeather weather provider:
@@ -102,6 +106,8 @@ PLAY_STORE_URL_ACCOUNT_HUB = "https://play.google.com/store/apps/details?id=com.
 #
 # All-device FCM broadcast (POST /api/internal/push-broadcast):
 #   wrangler secret put RR_PUSH_ADMIN_SECRET
+# Wallet admin on Solana Tools (`/admin/wallet-admin`): production uses the same secret via server proxy —
+# set `RR_PUSH_ADMIN_SECRET` on Vercel (solana-rootrecord-site) to match this Worker secret.
 #   wrangler secret put FCM_SERVICE_ACCOUNT_JSON
 # (paste your Firebase service account JSON — one secret; optional split vars still supported)
 #

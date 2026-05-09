@@ -12,6 +12,7 @@ import {
 } from "@solana/spl-token";
 
 import { json } from "./cors";
+import { verifyWorkerOpsAdmin } from "./push";
 import { sessionFromBearer, type AuthEnv } from "./primary-auth";
 import { loadKeypairForAccount, type InternalWalletEnv } from "./solana-internal-wallet";
 
@@ -33,13 +34,15 @@ function bearerToken(request: Request): string | null {
 }
 
 async function requireDevWalletAdmin(env: DevWalletAdminEnv, request: Request) {
-  if (!devEnabled(env)) return { ok: false as const, res: json({ detail: "Not found" }, 404) };
   const tok = bearerToken(request);
   if (!tok) return { ok: false as const, res: json({ detail: "Unauthorized" }, 401) };
   const sess = await sessionFromBearer(env, tok);
   if (!sess) return { ok: false as const, res: json({ detail: "Unauthorized" }, 401) };
   const email = String(sess.email || "").trim().toLowerCase();
   if (email !== ADMIN_EMAIL) return { ok: false as const, res: json({ detail: "Forbidden" }, 403) };
+  /** Prod: same secret as push-broadcast (`X-RR-Push-Admin-Key` / `RR_PUSH_ADMIN_SECRET`). Local: `DEV_WALLET_ADMIN_ENABLED=1`. */
+  const allowed = devEnabled(env) || (await verifyWorkerOpsAdmin(request, env));
+  if (!allowed) return { ok: false as const, res: json({ detail: "Not found" }, 404) };
   return { ok: true as const, sess };
 }
 
