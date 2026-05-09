@@ -3,6 +3,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { Connection, ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
   createBurnCheckedInstruction,
@@ -96,17 +97,53 @@ function parseUiToRaw(ui: string, decimals: number): bigint | null {
   }
 }
 
-async function listWallets(db: D1Database, cursor: string | null, limit: number) {
-  const rows = await db
+async function countWallets(db: D1Database, search: string | null): Promise<number> {
+  const s = String(search ?? "").trim();
+  if (!s) {
+    const row = await db.prepare("SELECT COUNT(*) AS c FROM internal_solana_wallets").first<{ c: number }>();
+    return Math.max(0, Math.floor(Number(row?.c) || 0));
+  }
+  const row = await db
     .prepare(
-      `SELECT iw.account_id, iw.pubkey, iw.created_at, la.email
+      `SELECT COUNT(*) AS c
        FROM internal_solana_wallets iw
        LEFT JOIN license_accounts la ON la.id = iw.account_id
-       WHERE (? IS NULL OR iw.created_at < ?)
-       ORDER BY iw.created_at DESC
-       LIMIT ?`,
+       WHERE INSTR(LOWER(iw.account_id), LOWER(?)) > 0
+          OR INSTR(LOWER(iw.pubkey), LOWER(?)) > 0
+          OR INSTR(LOWER(IFNULL(la.email, '')), LOWER(?)) > 0`,
     )
-    .bind(cursor, cursor, limit)
+    .bind(s, s, s)
+    .first<{ c: number }>();
+  return Math.max(0, Math.floor(Number(row?.c) || 0));
+}
+
+async function listWallets(db: D1Database, cursor: string | null, limit: number, search: string | null) {
+  const s = String(search ?? "").trim();
+  const baseFrom = `FROM internal_solana_wallets iw
+       LEFT JOIN license_accounts la ON la.id = iw.account_id`;
+  const order = `ORDER BY iw.created_at DESC
+       LIMIT ?`;
+  let sql: string;
+  let binds: unknown[];
+  if (!s) {
+    sql = `SELECT iw.account_id, iw.pubkey, iw.created_at, la.email ${baseFrom}
+       WHERE (? IS NULL OR iw.created_at < ?)
+       ${order}`;
+    binds = [cursor, cursor, limit];
+  } else {
+    sql = `SELECT iw.account_id, iw.pubkey, iw.created_at, la.email ${baseFrom}
+       WHERE (? IS NULL OR iw.created_at < ?)
+       AND (
+         INSTR(LOWER(iw.account_id), LOWER(?)) > 0
+         OR INSTR(LOWER(iw.pubkey), LOWER(?)) > 0
+         OR INSTR(LOWER(IFNULL(la.email, '')), LOWER(?)) > 0
+       )
+       ${order}`;
+    binds = [cursor, cursor, s, s, s, limit];
+  }
+  const rows = await db
+    .prepare(sql)
+    .bind(...binds)
     .all<{ account_id: string; pubkey: string; created_at: string; email: string | null }>();
   const items = (rows.results || []).map((r) => ({
     account_id: String(r.account_id || "").trim(),
@@ -114,7 +151,7 @@ async function listWallets(db: D1Database, cursor: string | null, limit: number)
     created_at: String(r.created_at || "").trim(),
     email: r.email == null ? null : String(r.email || "").trim(),
   }));
-  const nextCursor = items.length ? items[items.length - 1]!.created_at : null;
+  const nextCursor = items.length === limit ? items[items.length - 1]!.created_at : null;
   return { items, next_cursor: nextCursor };
 }
 
@@ -124,23 +161,50 @@ async function walletOverview(env: DevWalletAdminEnv, accountId: string) {
   const connection = new Connection(rpcUrl(env), "confirmed");
   const pk = kp.publicKey;
   const sol = await connection.getBalance(pk, "confirmed").catch(() => -1);
-  const parsed = await connection.getParsedTokenAccountsByOwner(pk, { programId: TOKEN_PROGRAM_ID }, "confirmed").catch(() => null);
-  const token_accounts =
-    parsed?.value?.map((v) => {
-      const info: any = v.account?.data?.parsed?.info;
-      const mint = String(info?.mint || "").trim();
-      const owner = String(info?.owner || "").trim();
-      const amount = info?.tokenAmount || {};
-      return {
-        token_account: v.pubkey.toBase58(),
-        mint: mint || null,
-        owner: owner || null,
-        amount_raw: typeof amount.amount === "string" ? amount.amount : null,
-        decimals: typeof amount.decimals === "number" ? amount.decimals : null,
-        ui_amount: typeof amount.uiAmount === "number" ? amount.uiAmount : null,
-        ui_amount_string: typeof amount.uiAmountString === "string" ? amount.uiAmountString : null,
-      };
-    }) || [];
+  const [classic, token2022] = await Promise.all([
+    connection.getParsedTokenAccountsByOwner(pk, { programId: TOKEN_PROGRAM_ID }, "confirmed").catch(() => null),
+    connection.getParsedTokenAccountsByOwner(pk, { programId: TOKEN_2022_PROGRAM_ID }, "confirmed").catch(() => null),
+  ]);
+  type TokenRow = {
+    token_account: string;
+    mint: string | null;
+    owner: string | null;
+    amount_raw: string | null;
+    decimals: number | null;
+    ui_amount: number | null;
+    ui_amount_string: string | null;
+  };
+  function rowFromParsedEntry(v: { pubkey: PublicKey; account: { data: unknown } }): TokenRow | null {
+    const raw = v.account?.data;
+    if (typeof raw !== "object" || raw === null || !("parsed" in raw)) return null;
+    const parsed = (raw as { parsed?: { type?: string; info?: Record<string, unknown> } }).parsed;
+    if (!parsed || parsed.type !== "account" || !parsed.info) return null;
+    const info = parsed.info as {
+      mint?: string;
+      owner?: string;
+      tokenAmount?: { amount?: string; decimals?: number; uiAmount?: number; uiAmountString?: string };
+    };
+    const mint = String(info?.mint || "").trim();
+    const owner = String(info?.owner || "").trim();
+    const amount = info?.tokenAmount || {};
+    return {
+      token_account: v.pubkey.toBase58(),
+      mint: mint || null,
+      owner: owner || null,
+      amount_raw: typeof amount.amount === "string" ? amount.amount : null,
+      decimals: typeof amount.decimals === "number" ? amount.decimals : null,
+      ui_amount: typeof amount.uiAmount === "number" ? amount.uiAmount : null,
+      ui_amount_string: typeof amount.uiAmountString === "string" ? amount.uiAmountString : null,
+    };
+  }
+  const merged = new Map<string, TokenRow>();
+  for (const parsed of [classic, token2022]) {
+    for (const v of parsed?.value || []) {
+      const row = rowFromParsedEntry(v as { pubkey: PublicKey; account: { data: unknown } });
+      if (row?.token_account) merged.set(row.token_account, row);
+    }
+  }
+  const token_accounts = [...merged.values()];
   return {
     ok: true as const,
     data: {
@@ -334,10 +398,12 @@ export async function handleDevWalletAdminRoutes(
   const rest = sub === base ? "" : sub.slice(base.length);
 
   if (method === "GET" && rest === "/wallets") {
-    const lim = clampInt(Number(textParam(url, "limit", 10) || "50"), 1, 200);
-    const cursor = textParam(url, "cursor", 64);
-    const r = await listWallets(env.DB, cursor, lim);
-    return json({ ok: true, ...r }, 200);
+    const lim = clampInt(Number(textParam(url, "limit", 10) || "10"), 1, 200);
+    const cursor = textParam(url, "cursor", 80);
+    const search = textParam(url, "q", 200);
+    const total_count = await countWallets(env.DB, search);
+    const r = await listWallets(env.DB, cursor, lim, search);
+    return json({ ok: true, ...r, total_count }, 200);
   }
 
   if (method === "GET" && rest.startsWith("/wallet/") && rest.endsWith("/overview")) {
