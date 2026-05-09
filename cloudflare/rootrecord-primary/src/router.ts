@@ -37,6 +37,8 @@ import { handleCustodialRrttWithdrawV1 } from "./custodial-rrtt-withdraw";
 import { readRecentHttpErrorEvents } from "./observability";
 import { handleMobileVersionPolicy } from "./mobile-client-version";
 import { handleDeveloperMessagesGet, handleDeveloperMessagesPost } from "./developer-messages";
+import { handlePhotosRoutes } from "./photos";
+import { handleDevWalletAdminRoutes } from "./dev-wallet-admin";
 
 import {
 
@@ -156,6 +158,12 @@ export interface Env {
   CUSTODIAL_RPC_REFRESH_BUDGET_MS?: string;
   /** Treasury keypair secret key base58 (same encoding as Phantom export). */
   RRTT_TREASURY_SECRET_KEY_B58?: string;
+
+  /**
+   * Dev-only privileged wallet admin API switch.
+   * Must be set to "1" in local wrangler dev vars; should never be enabled in production.
+   */
+  DEV_WALLET_ADMIN_ENABLED?: string;
 
   /** Base URL of Worker `rootrecord-solana-tx` (no trailing slash) — treasury cron + internal POSTs proxy there. */
   ROOTRECORD_SOLANA_TX_URL?: string;
@@ -1013,6 +1021,10 @@ export async function handleRequest(
 
   if (solRes) return solRes;
 
+  const devWalletAdminRes = await handleDevWalletAdminRoutes(request, env as any, sub, method);
+
+  if (devWalletAdminRes) return devWalletAdminRes;
+
   const feedbackRes = await handleFeedbackRoute(request, env, sub, method);
 
   if (feedbackRes) return feedbackRes;
@@ -1020,6 +1032,10 @@ export async function handleRequest(
   const businessRes = await handleBusinessRoutes(request, env, sub, method);
 
   if (businessRes) return businessRes;
+
+  const photosRes = await handlePhotosRoutes(request, env as any, sub, method);
+
+  if (photosRes) return photosRes;
 
 
 

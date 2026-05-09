@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Wallet Admin &mdash; RootRecord</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="stylesheet" href="/styles.css?v=10">
+</head>
+<body>
+  <div class="site">
+    <main class="site-main">
+      <section class="page-header">
+        <div class="container">
+          <div class="page-header-inner">
+            <p class="breadcrumb">Dev</p>
+            <h1 class="page-title">Wallet admin <em>(dev-only)</em>.</h1>
+            <p class="page-lead">Requires a signed-in Bearer token and the server dev flag.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" style="padding-top:0">
+        <div class="container">
+          <p id="status" class="status" role="status"></p>
+
+          <div class="card-plain" style="display:grid;grid-template-columns:1fr;gap:1rem">
+            <div class="card-plain" style="border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03)">
+              <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+                <input id="q" class="input" placeholder="Filter (account_id, pubkey, email)" style="flex:1;min-width:260px">
+                <button id="btn-refresh" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="wallets" style="margin-top:1rem"></div>
+            </div>
+
+            <div class="card-plain" style="border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03)">
+              <h2 style="margin-top:0">Wallet</h2>
+              <div id="wallet-detail"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/dev-wallet-admin.js?v=1" defer></script>
+</body>
+</html>
+
