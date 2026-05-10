@@ -7,6 +7,11 @@ Private workspace for RootRecord web stacks: **Cloudflare Workers** (primary API
 | Path | What it is |
 |------|----------------|
 | `cloudflare/rootrecord-primary` | Main Worker (`api.rootrecord.info`): auth, weather, earn, business routes, D1 migrations |
+| `cloudflare/rootrecord-api-weather` | Per-app API shard (copy of primary; **no crons**). Future: dedicated hostname for Weather. See `cloudflare/API-SHARDS.md`. |
+| `cloudflare/rootrecord-api-business` | Per-app API shard for Business Manager. |
+| `cloudflare/rootrecord-api-account` | Per-app API shard for Account Hub. |
+| `cloudflare/rootrecord-api-token` | Per-app API shard for Token Manager. |
+| `cloudflare/rootrecord-api-kilauea` | Per-app API shard for Kīlauea Alerts. |
 | `cloudflare/rootrecord-license` | Licence Worker (legacy / companion) |
 | `cloudflare/shared` | Shared TS modules (password verify, billing, app associations, etc.) |
 | `solana/` | **Not** the Solana Tools app source — see `solana/README.md`. The live Next app is only in [RootRecord/solana-rootrecord-site](https://github.com/RootRecord/solana-rootrecord-site). |
@@ -14,6 +19,8 @@ Private workspace for RootRecord web stacks: **Cloudflare Workers** (primary API
 | `main` | **rootrecord.info** Cloudflare Pages site (static HTML + `functions/`; `wrangler pages deploy`) |
 
 Worker source of truth for the primary API is **`cloudflare/rootrecord-primary`**.
+
+**Web Analytics (per app):** `docs/CLOUDFLARE-WEB-ANALYTICS.md` — add each hostname in the dashboard, set `CF_WEB_ANALYTICS_TOKEN_*` in `credentials.env`, deploy scripts inject the beacon (marketing uses a temp copy so secrets are not written into tracked HTML).
 
 ## New machine checklist
 

@@ -24,8 +24,7 @@ bucket_name = "rootrecord-volcano-photos"
 
 [vars]
 SITE_URL = "https://rootrecord.info"
-# AccuWeather weather provider:
-#   wrangler secret put ACCUWEATHER_API_KEY
+# AccuWeather: API key is a Worker **Secret** (`deploy.ps1` from repo-root `credentials.env` → `wrangler secret put ACCUWEATHER_API_KEY`), not [vars] (avoids Secret + var name clash in dashboard).
 # Optional language locale for responses (default in code: en-us)
 ACCUWEATHER_LANGUAGE = "en-us"
 # Dashboard D1 cache: seconds before refetching upstream weather for same/nearby grid.

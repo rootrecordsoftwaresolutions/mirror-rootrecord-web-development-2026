@@ -49,3 +49,13 @@ solana/solanasite/
 
 # Local scratch clones (never commit into Web)
 solana-rootrecord-site-fix/
+
+# Saved browser page folders (never commit)
+*_files/
+
+# Local junk / exports at repo root
+/*.pdf
+/Dark Sky*
+/solana-wallets*.txt
+/*.tsv
+/*.tsv.txt
