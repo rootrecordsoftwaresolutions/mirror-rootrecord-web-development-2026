@@ -37,6 +37,175 @@ function nwsQuantValue(node: unknown): number | null {
   return null;
 }
 
+/** Accu nested `Metric` / `Imperial` `.Value` (Pascal) or `.value` (camel); `null` must not become 0 via `Number(null)`. */
+function accuDualScalar(metricOrImperial: unknown): number | null {
+  if (metricOrImperial == null || typeof metricOrImperial !== "object") return null;
+  const o = metricOrImperial as Record<string, unknown>;
+  const raw = o.Value ?? o.value;
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Prefer PascalCase Accu JSON keys, then camelCase (dataservice is usually PascalCase). */
+function accuProp(cc: Record<string, unknown>, pascal: string): unknown {
+  const v = cc[pascal];
+  if (v !== undefined && v !== null) return v;
+  const camel = pascal.charAt(0).toLowerCase() + pascal.slice(1);
+  return cc[camel];
+}
+
+/** AccuWeather dual-unit temperature: Metric °C, else Imperial °F → °C. */
+function accuTempMetricC(dual: unknown): number | null {
+  const o = dual as Record<string, unknown> | null | undefined;
+  if (!o || typeof o !== "object") return null;
+  const flat = o.Value ?? o.value;
+  if (
+    (typeof flat === "number" || typeof flat === "string") &&
+    !("Metric" in o) &&
+    !("Imperial" in o)
+  ) {
+    const v = Number(flat);
+    if (!Number.isFinite(v)) return null;
+    const unit = String(o.Unit ?? o.unit ?? "").toUpperCase();
+    if (unit === "F" || unit.endsWith("F")) return ((v - 32) * 5) / 9;
+    return v;
+  }
+  const m = accuDualScalar(o.Metric);
+  if (m != null) return m;
+  const f = accuDualScalar(o.Imperial);
+  if (f == null) return null;
+  return ((f - 32) * 5) / 9;
+}
+
+/** AccuWeather dual-unit speed: Metric km/h, else Imperial mph → km/h. */
+function accuSpeedMetricKmh(dual: unknown): number | null {
+  const o = dual as Record<string, unknown> | null | undefined;
+  if (!o || typeof o !== "object") return null;
+  const m = accuDualScalar(o.Metric);
+  if (m != null) return m;
+  const mph = accuDualScalar(o.Imperial);
+  if (mph == null) return null;
+  return mph * 1.60934;
+}
+
+/** AccuWeather dual-unit small length: Metric mm, else Imperial in → mm. */
+function accuLengthMetricMm(dual: unknown): number | null {
+  const o = dual as Record<string, unknown> | null | undefined;
+  if (!o || typeof o !== "object") return null;
+  const m = accuDualScalar(o.Metric);
+  if (m != null) return m;
+  const inch = accuDualScalar(o.Imperial);
+  if (inch == null) return null;
+  return inch * 25.4;
+}
+
+/** AccuWeather dual-unit visibility: Metric km, else Imperial mi → km. */
+function accuVisibilityMetricKm(dual: unknown): number | null {
+  const o = dual as Record<string, unknown> | null | undefined;
+  if (!o || typeof o !== "object") return null;
+  const m = accuDualScalar(o.Metric);
+  if (m != null) return m;
+  const mi = accuDualScalar(o.Imperial);
+  if (mi == null) return null;
+  return mi * 1.60934;
+}
+
+/** AccuWeather pressure: Metric mb, else Imperial inHg → mb. */
+function accuPressureMetricMb(dual: unknown): number | null {
+  const o = dual as Record<string, unknown> | null | undefined;
+  if (!o || typeof o !== "object") return null;
+  const m = accuDualScalar(o.Metric);
+  if (m != null) return m;
+  const inHg = accuDualScalar(o.Imperial);
+  if (inHg == null) return null;
+  return inHg * 33.8639;
+}
+
+/** Ceiling height: Metric m, else Imperial ft → m. */
+function accuCeilingMetricM(dual: unknown): number | null {
+  const o = dual as Record<string, unknown> | null | undefined;
+  if (!o || typeof o !== "object") return null;
+  const m = accuDualScalar(o.Metric);
+  if (m != null) return m;
+  const ft = accuDualScalar(o.Imperial);
+  if (ft == null) return null;
+  return ft * 0.3048;
+}
+
+/** Stull (2011) wet-bulb °C from air T °C and RH % — when Accu omits `WetBulbTemperature`. */
+function wetBulbFromRhApprox(tempC: number, rhPct: number): number | null {
+  if (!Number.isFinite(tempC) || !Number.isFinite(rhPct)) return null;
+  const RH = Math.max(0, Math.min(100, rhPct));
+  const T = tempC;
+  const tw =
+    T * Math.atan(0.151977 * Math.sqrt(RH + 8.313659)) +
+    Math.atan(T + RH) -
+    Math.atan(RH - 1.676331) +
+    0.00391838 * RH ** 1.5 * Math.atan(0.023101 * RH) -
+    4.686035;
+  return Number.isFinite(tw) ? tw : null;
+}
+
+function accuCloudCoverPercent(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && String(raw).trim()) {
+    const n = Number(String(raw).trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  if (typeof raw === "object" && raw !== null) {
+    const o = raw as Record<string, unknown>;
+    if ("Metric" in o || "Imperial" in o) {
+      const m = accuDualScalar(o.Metric);
+      if (m != null) return m;
+      const im = accuDualScalar(o.Imperial);
+      return im != null && Number.isFinite(im) ? im : null;
+    }
+    const v = o.Value ?? o.value;
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** Accu `RelativeHumidity` as 0–100 % (number, percent string, or rare nested Value). */
+function accuRelativeHumidityPct(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const m = String(raw).trim().match(/(\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (typeof raw === "object" && raw !== null) {
+    const o = raw as Record<string, unknown>;
+    const v = o.Value ?? o.value;
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function accuUvIndex(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && String(raw).trim()) {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (typeof raw === "object" && raw !== null) {
+    const o = raw as Record<string, unknown>;
+    const v = o.Value ?? o.value ?? o.UVIndex ?? o.UVIndexFloat;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 function observationMetricScore(props: Record<string, unknown>): number {
   const keys = ["temperature", "relativeHumidity", "windSpeed", "barometricPressure"] as const;
   let s = 0;
@@ -358,71 +527,69 @@ export async function weatherCurrent(
       const current = await accuFetchJson<Array<Record<string, unknown>>>(
         env || {},
         `/currentconditions/v1/${encodeURIComponent(loc.key)}`,
+        // `metric` is not a documented Current Conditions parameter on dataservice; it can yield
+        // incomplete dual-unit blobs. Rely on `details=true` + Metric/Imperial parsing instead.
         { details: "true" },
         { db, metric: "accu.call.current_conditions" }
       );
       const c = (Array.isArray(current) ? current[0] : null) || {};
-      const icon = Number((c as Record<string, unknown>)?.WeatherIcon);
-      const tempC = Number(((c.Temperature as Record<string, unknown>)?.Metric as Record<string, unknown>)?.Value);
-      const humidity = Number(c.RelativeHumidity);
-      const windKmh = Number(
-        ((((c.Wind as Record<string, unknown>)?.Speed as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const pressureMb = Number(((c.Pressure as Record<string, unknown>)?.Metric as Record<string, unknown>)?.Value);
-      const phrase = typeof c.WeatherText === "string" ? c.WeatherText : "";
-      const visKm = Number(
-        ((((c as Record<string, unknown>)?.Visibility as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const cloudPct = Number((c as Record<string, unknown>)?.CloudCover);
-      const uv = Number((c as Record<string, unknown>)?.UVIndex);
-      const gustKmh = Number(
-        ((((c as Record<string, unknown>)?.WindGust as Record<string, unknown>)?.Speed as Record<string, unknown>)?.Metric as Record<string, unknown>)?.Value
-      );
-      const feelsLikeC = Number(
-        ((((c as Record<string, unknown>)?.RealFeelTemperature as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const dewPointC = Number(
-        ((((c as Record<string, unknown>)?.DewPoint as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const wetBulbC = Number(
-        ((((c as Record<string, unknown>)?.WetBulbTemperature as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const ceilingM = Number(
-        ((((c as Record<string, unknown>)?.Ceiling as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const precip1hMm = Number(
-        ((((c as Record<string, unknown>)?.Precip1hr as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const precipSum = ((c as Record<string, unknown>)?.PrecipitationSummary as Record<string, unknown>) || {};
-      const past3hMm = Number(
-        ((((precipSum as Record<string, unknown>)?.Past3Hours as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
-      const past6hMm = Number(
-        ((((precipSum as Record<string, unknown>)?.Past6Hours as Record<string, unknown>)?.Metric as Record<string, unknown>) || {})
-          .Value
-      );
+      const cc = c as Record<string, unknown>;
+      const icon = Number(accuProp(cc, "WeatherIcon"));
+      const tempC = accuTempMetricC(accuProp(cc, "Temperature"));
+      const humidity = accuRelativeHumidityPct(accuProp(cc, "RelativeHumidity"));
+      const windRec = (accuProp(cc, "Wind") as Record<string, unknown> | undefined) || undefined;
+      const windGustRec = (accuProp(cc, "WindGust") as Record<string, unknown> | undefined) || undefined;
+      const windKmh = accuSpeedMetricKmh(windRec?.Speed as unknown);
+      const pressureMb = accuPressureMetricMb(accuProp(cc, "Pressure"));
+      const phrase = typeof accuProp(cc, "WeatherText") === "string" ? String(accuProp(cc, "WeatherText")) : "";
+      const visKm = accuVisibilityMetricKm(accuProp(cc, "Visibility"));
+      const cloudPct = accuCloudCoverPercent(accuProp(cc, "CloudCover"));
+      const uv = accuUvIndex(accuProp(cc, "UVIndexFloat") ?? accuProp(cc, "UVIndex"));
+      const gustKmh = accuSpeedMetricKmh(windGustRec?.Speed as unknown ?? null);
+      const feelsLikeC =
+        accuTempMetricC(accuProp(cc, "RealFeelTemperature")) ??
+        accuTempMetricC(accuProp(cc, "RealFeelTemperatureShade")) ??
+        accuTempMetricC(accuProp(cc, "ApparentTemperature")) ??
+        accuTempMetricC(accuProp(cc, "WindChillTemperature")) ??
+        accuTempMetricC(accuProp(cc, "HeatIndex")) ??
+        (Number.isFinite(tempC) ? tempC : null);
+      const dewPointC = accuTempMetricC(accuProp(cc, "DewPoint"));
+      const wetBulbC =
+        accuTempMetricC(accuProp(cc, "WetBulbTemperature")) ??
+        accuTempMetricC(accuProp(cc, "WetBulbGlobeTemperature")) ??
+        (tempC != null && Number.isFinite(tempC) && humidity != null && Number.isFinite(humidity)
+          ? wetBulbFromRhApprox(tempC, humidity)
+          : null);
+      const ceilingM = accuCeilingMetricM(accuProp(cc, "Ceiling"));
+      const precipSum = (accuProp(cc, "PrecipitationSummary") as Record<string, unknown>) || {};
+      const precip1hMm =
+        accuLengthMetricMm(accuProp(cc, "Precip1hr")) ??
+        accuLengthMetricMm((precipSum as Record<string, unknown>).PastHour) ??
+        accuLengthMetricMm((precipSum as Record<string, unknown>).pastHour) ??
+        accuLengthMetricMm((precipSum as Record<string, unknown>).Precipitation) ??
+        accuLengthMetricMm((precipSum as Record<string, unknown>).precipitation);
+      const past3hMm =
+        accuLengthMetricMm((precipSum as Record<string, unknown>).Past3Hours) ??
+        accuLengthMetricMm((precipSum as Record<string, unknown>).past3Hours);
+      const past6hMm =
+        accuLengthMetricMm((precipSum as Record<string, unknown>).Past6Hours) ??
+        accuLengthMetricMm((precipSum as Record<string, unknown>).past6Hours);
+      const pressureTendencyRec =
+        (accuProp(cc, "PressureTendency") as Record<string, unknown> | undefined) || undefined;
       const pressureTrend =
-        typeof ((c as Record<string, unknown>)?.PressureTendency as Record<string, unknown>)?.LocalizedText === "string"
-          ? (((c as Record<string, unknown>)?.PressureTendency as Record<string, unknown>)?.LocalizedText as string)
-          : "";
+        typeof pressureTendencyRec?.LocalizedText === "string" ? String(pressureTendencyRec.LocalizedText) : "";
       const outObs: Record<string, unknown> = {
         temperature: Number.isFinite(tempC) ? { unitCode: "wmoUnit:degC", value: tempC } : null,
         feelsLike: Number.isFinite(feelsLikeC) ? { unitCode: "wmoUnit:degC", value: feelsLikeC } : null,
         dewpoint: Number.isFinite(dewPointC) ? { unitCode: "wmoUnit:degC", value: dewPointC } : null,
         wetBulbTemperature: Number.isFinite(wetBulbC) ? { unitCode: "wmoUnit:degC", value: wetBulbC } : null,
-        relativeHumidity: Number.isFinite(humidity) ? { unitCode: "wmoUnit:percent", value: humidity } : null,
+        relativeHumidity:
+          humidity != null && Number.isFinite(humidity) ? { unitCode: "wmoUnit:percent", value: humidity } : null,
         windSpeed: Number.isFinite(windKmh) ? { unitCode: "wmoUnit:km_h-1", value: windKmh } : null,
         windGust: Number.isFinite(gustKmh) ? { unitCode: "wmoUnit:km_h-1", value: gustKmh } : null,
-        barometricPressure: Number.isFinite(pressureMb) ? { unitCode: "wmoUnit:Pa", value: pressureMb * 100 } : null,
-        visibility: Number.isFinite(visKm) ? { unitCode: "wmoUnit:m", value: visKm * 1000 } : null,
+        barometricPressure:
+          pressureMb != null && Number.isFinite(pressureMb) ? { unitCode: "wmoUnit:Pa", value: pressureMb * 100 } : null,
+        visibility: visKm != null && Number.isFinite(visKm) ? { unitCode: "wmoUnit:m", value: visKm * 1000 } : null,
         ceiling: Number.isFinite(ceilingM) ? { unitCode: "wmoUnit:m", value: ceilingM } : null,
         cloudCover: Number.isFinite(cloudPct) ? { unitCode: "wmoUnit:percent", value: cloudPct } : null,
         uvIndex: Number.isFinite(uv) ? uv : null,
@@ -432,8 +599,9 @@ export async function weatherCurrent(
         pressureTendency: pressureTrend || null,
         textDescription: phrase || null,
         windDirectionCardinal:
-          typeof ((c.Wind as Record<string, unknown>)?.Direction as Record<string, unknown>)?.English === "string"
-            ? (((c.Wind as Record<string, unknown>)?.Direction as Record<string, unknown>)?.English as string)
+          typeof windRec?.Direction === "object" &&
+          typeof (windRec.Direction as Record<string, unknown>)?.English === "string"
+            ? String((windRec.Direction as Record<string, unknown>).English)
             : null,
       };
       return {
@@ -451,20 +619,24 @@ export async function weatherCurrent(
           feelsLike: Number.isFinite(feelsLikeC) ? feelsLikeC : null,
           dewPoint: Number.isFinite(dewPointC) ? dewPointC : null,
           wetBulb: Number.isFinite(wetBulbC) ? wetBulbC : null,
-          relativeHumidity: { unitCode: "wmoUnit:percent", value: Number.isFinite(humidity) ? humidity : null },
-          windSpeed: Number.isFinite(windKmh) ? `${Math.round(windKmh)} km/h` : null,
-          windGust: Number.isFinite(gustKmh) ? `${Math.round(gustKmh)} km/h` : null,
-          visibility: Number.isFinite(visKm) ? `${visKm.toFixed(1)} km` : null,
-          cloudCover: Number.isFinite(cloudPct) ? `${Math.round(cloudPct)}%` : null,
-          uvIndex: Number.isFinite(uv) ? uv : null,
-          ceiling: Number.isFinite(ceilingM) ? `${Math.round(ceilingM)} m` : null,
-          precip1h: Number.isFinite(precip1hMm) ? `${precip1hMm.toFixed(1)} mm` : null,
-          precipPast3h: Number.isFinite(past3hMm) ? `${past3hMm.toFixed(1)} mm` : null,
-          precipPast6h: Number.isFinite(past6hMm) ? `${past6hMm.toFixed(1)} mm` : null,
+          relativeHumidity: {
+            unitCode: "wmoUnit:percent",
+            value: humidity != null && Number.isFinite(humidity) ? humidity : null,
+          },
+          windSpeed: windKmh != null && Number.isFinite(windKmh) ? `${Math.round(windKmh)} km/h` : null,
+          windGust: gustKmh != null && Number.isFinite(gustKmh) ? `${Math.round(gustKmh)} km/h` : null,
+          visibility: visKm != null && Number.isFinite(visKm) ? `${visKm.toFixed(1)} km` : null,
+          cloudCover: cloudPct != null && Number.isFinite(cloudPct) ? `${Math.round(cloudPct)}%` : null,
+          uvIndex: uv != null && Number.isFinite(uv) ? uv : null,
+          ceiling: ceilingM != null && Number.isFinite(ceilingM) ? `${Math.round(ceilingM)} m` : null,
+          precip1h: precip1hMm != null && Number.isFinite(precip1hMm) ? `${precip1hMm.toFixed(1)} mm` : null,
+          precipPast3h: past3hMm != null && Number.isFinite(past3hMm) ? `${past3hMm.toFixed(1)} mm` : null,
+          precipPast6h: past6hMm != null && Number.isFinite(past6hMm) ? `${past6hMm.toFixed(1)} mm` : null,
           pressureTendency: pressureTrend || null,
           windDirection:
-            typeof ((c.Wind as Record<string, unknown>)?.Direction as Record<string, unknown>)?.English === "string"
-              ? (((c.Wind as Record<string, unknown>)?.Direction as Record<string, unknown>)?.English as string)
+            typeof windRec?.Direction === "object" &&
+            typeof (windRec.Direction as Record<string, unknown>)?.English === "string"
+              ? String((windRec.Direction as Record<string, unknown>).English)
               : null,
         },
         city: loc.city,
@@ -552,15 +724,15 @@ export async function weatherForecast(
         const day = (d.Day as Record<string, unknown>) || {};
         const night = (d.Night as Record<string, unknown>) || {};
         const temp = (d.Temperature as Record<string, unknown>) || {};
-        const min = Number(((temp.Minimum as Record<string, unknown>) || {}).Value);
-        const max = Number(((temp.Maximum as Record<string, unknown>) || {}).Value);
+        const maxC = accuTempMetricC(temp.Maximum);
+        const minC = accuTempMetricC(temp.Minimum);
         return [
           {
             number: idx * 2 + 1,
             name: `Day ${idx + 1}`,
             isDaytime: true,
             startTime: date,
-            temperature: Number.isFinite(max) ? max : null,
+            temperature: maxC != null && Number.isFinite(maxC) ? maxC : null,
             temperatureUnit: "C",
             shortForecast: typeof day.IconPhrase === "string" ? day.IconPhrase : "",
             icon: Number.isFinite(Number(day.Icon)) ? Number(day.Icon) : null,
@@ -570,7 +742,7 @@ export async function weatherForecast(
             name: `Night ${idx + 1}`,
             isDaytime: false,
             startTime: date,
-            temperature: Number.isFinite(min) ? min : null,
+            temperature: minC != null && Number.isFinite(minC) ? minC : null,
             temperatureUnit: "C",
             shortForecast: typeof night.IconPhrase === "string" ? night.IconPhrase : "",
             icon: Number.isFinite(Number(night.Icon)) ? Number(night.Icon) : null,
@@ -578,22 +750,21 @@ export async function weatherForecast(
         ];
       });
       const hourlyPeriods = (((hourly as unknown[]) || []) as Array<Record<string, unknown>>).map((h, idx) => {
-        const hTemp = (h.Temperature as Record<string, unknown>) || {};
         const hWind = (h.Wind as Record<string, unknown>) || {};
         const hWindSpeed = (hWind.Speed as Record<string, unknown>) || {};
         const hWindDir = (hWind.Direction as Record<string, unknown>) || {};
-        const t = Number(hTemp.Value);
+        const tC = accuTempMetricC(h.Temperature);
         const rh = Number(h.RelativeHumidity);
-        const wind = Number(hWindSpeed.Value);
+        const windKmh = accuSpeedMetricKmh(hWindSpeed as unknown);
         const icon = Number((h as Record<string, unknown>)?.WeatherIcon);
         return {
           number: idx + 1,
           startTime: h.DateTime,
-          temperature: Number.isFinite(t) ? t : null,
+          temperature: tC != null && Number.isFinite(tC) ? tC : null,
           temperatureUnit: "C",
           shortForecast: typeof h.IconPhrase === "string" ? h.IconPhrase : "",
           icon: Number.isFinite(icon) ? icon : null,
-          windSpeed: Number.isFinite(wind) ? `${Math.round(wind)} km/h` : null,
+          windSpeed: windKmh != null && Number.isFinite(windKmh) ? `${Math.round(windKmh)} km/h` : null,
           windDirection: typeof hWindDir.English === "string" ? hWindDir.English : null,
           relativeHumidity: Number.isFinite(rh) ? { unitCode: "wmoUnit:percent", value: rh } : null,
         };
@@ -886,6 +1057,65 @@ function bundleWeatherSource(bundle: Record<string, unknown>): string {
   return src || "unknown";
 }
 
+/** Kīlauea summit — USGS HVO bundle only fetched within this radius (miles). */
+const KILAUEA_SUMMIT_LAT = 19.421;
+const KILAUEA_SUMMIT_LON = -155.287;
+const KILAUEA_VNUM = "332010";
+const HVO_BUNDLE_RADIUS_MILES = 140;
+
+function stripHtmlToText(html: string, maxLen: number): string {
+  const t = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return t.length > maxLen ? `${t.slice(0, maxLen)}…` : t;
+}
+
+/** USGS HANS newest notice for Kīlauea (alert level + aviation color). */
+async function usgsHvoKilaueaNotice(db?: D1Database): Promise<Record<string, unknown>> {
+  const url = `https://volcanoes.usgs.gov/hans-public/api/volcano/newestForVolcano/${KILAUEA_VNUM}`;
+  try {
+    const ac = new AbortController();
+    const to = setTimeout(() => ac.abort(), 14_000);
+    const r = await fetch(url, {
+      signal: ac.signal,
+      headers: { "User-Agent": NWS_USER_AGENT, Accept: "application/json" },
+    });
+    clearTimeout(to);
+    if (!r.ok) {
+      await bumpUsageMetric(db, "usgs.hvo.http_error", 1);
+      return { available: false, reason: `http_${r.status}` };
+    }
+    const j = (await r.json()) as Record<string, unknown>;
+    await bumpUsageMetric(db, "usgs.hvo.ok", 1);
+    const sections = (j.noticeSections as Array<Record<string, unknown>>) || [];
+    const synHtmlParts: string[] = [];
+    for (const sec of sections) {
+      const raw = typeof sec.synopsis === "string" ? sec.synopsis : "";
+      if (raw.trim()) synHtmlParts.push(raw.trim());
+    }
+    const combinedSyn = synHtmlParts.join("<br/><br/>");
+    return {
+      available: true,
+      source: "usgs_hans",
+      volcano_name: "Kīlauea",
+      vnum: KILAUEA_VNUM,
+      alert_level: j.noticeHighestAlertLevel ?? null,
+      aviation_color_code: j.noticeHighestColorCode ?? null,
+      notice_title: typeof j.noticeTitle === "string" ? j.noticeTitle : null,
+      notice_type: typeof j.noticeType === "string" ? j.noticeType : null,
+      notice_url: typeof j.noticeUrl === "string" ? j.noticeUrl : null,
+      sent_utc: typeof j.sentUtc === "string" ? j.sentUtc : null,
+      synopsis_plain: combinedSyn ? stripHtmlToText(combinedSyn, 20_000) : null,
+    };
+  } catch {
+    await bumpUsageMetric(db, "usgs.hvo.fetch_fail", 1);
+    return { available: false, reason: "hvo_fetch_failed" };
+  }
+}
+
 async function sharedRecentBundle(
   db: D1Database,
   lat: number,
@@ -999,15 +1229,18 @@ export async function dashboardBundle(
     }
   }
 
+  const nearKilauea =
+    haversineMiles(lat, lon, KILAUEA_SUMMIT_LAT, KILAUEA_SUMMIT_LON) <= HVO_BUNDLE_RADIUS_MILES;
   const settled = await Promise.allSettled([
     weatherCurrent(lat, lon, weatherEnv, db, accuLoc || undefined),
     weatherAlerts(lat, lon, weatherEnv, db, accuLoc || undefined),
     useAccu ? Promise.resolve({ available: false, alerts: [], source: "disabled_under_accuweather_tos" }) : canadaAlerts(lat, lon),
-    usgsEarthquakes(lat, lon, 300, "day", 2.5),
+    usgsEarthquakes(lat, lon, nearKilauea ? 420 : 300, "day", nearKilauea ? 1.2 : 2.5),
     weatherForecast(lat, lon, weatherEnv, db, accuLoc || undefined),
+    nearKilauea ? usgsHvoKilaueaNotice(db) : Promise.resolve({ available: false, reason: "outside_hvo_region" }),
   ]);
   const vals = settled.map((s) => (s.status === "fulfilled" ? s.value : s.reason));
-  const [current, alerts, canada, usgs, forecast] = vals;
+  const [current, alerts, canada, usgs, forecast, hvo] = vals;
 
   const bundle: Record<string, unknown> = {
     current: safe(current, { available: false }),
@@ -1015,6 +1248,7 @@ export async function dashboardBundle(
     canada_alerts: safe(canada, { available: false, alerts: [] }),
     usgs: safe(usgs, { available: false, events: [] }),
     forecast: safe(forecast, { available: false, periods: [], hourly: [] }),
+    kilauea_hvo: safe(hvo, { available: false }),
     fetched_at: new Date().toISOString(),
   };
 

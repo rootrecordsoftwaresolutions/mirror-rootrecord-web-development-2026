@@ -22,7 +22,7 @@ import nacl from "tweetnacl";
 
 import { json } from "./cors";
 import { verifyWorkerOpsAdmin } from "./push";
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest, type AuthEnv } from "./primary-auth";
 import { notifySolanaToolsDiscord } from "./discord-solana-notify";
 import { insertTreasuryToCustodialLedger } from "./earn-rewards-ledger";
 import {
@@ -315,13 +315,16 @@ export async function handleCustodialSolWalletV1(
   method: string,
   pathname: string,
 ): Promise<Response> {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) {
-    return json({ detail: "Sign in required.", ok: false }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json(
+      {
+        detail: extractAuthToken(request) ? "Invalid or expired session." : "Sign in required.",
+        ok: false,
+      },
+      401,
+    );
   }
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Invalid or expired session.", ok: false }, 401);
 
   const basePath = "/v1/me/custodial-sol-wallet";
   const rest = pathname === basePath ? "" : pathname.slice(basePath.length);
@@ -546,11 +549,10 @@ export async function handleCustodialSolWalletV1(
 /** POST body `{ withdraw_dest_pubkey: string | null }` — optional self-custody destination when no linked wallet. */
 export async function handleCustodialWithdrawDestV1(request: Request, env: InternalWalletEnv, method: string): Promise<Response> {
   if (method !== "POST") return json({ detail: "Method not allowed" }, 405);
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Unauthorized" }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json({ detail: extractAuthToken(request) ? "Unauthorized" : "Missing token" }, 401);
+  }
   let body: { withdraw_dest_pubkey?: string | null };
   try {
     body = (await request.json()) as typeof body;
@@ -594,15 +596,6 @@ export async function handleSolanaInternalWalletRoutes(
   if (sub !== "/solana/my-wallet") return null;
   if (method !== "GET" && method !== "POST") return json({ detail: "Method not allowed" }, 405);
 
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) {
-    return json({ detail: "Sign in required." }, 401);
-  }
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Invalid or expired session." }, 401);
-
-  const pathname = "/v1/me/custodial-sol-wallet" + (method === "GET" ? "" : "");
   return handleCustodialSolWalletV1(
     request,
     env,

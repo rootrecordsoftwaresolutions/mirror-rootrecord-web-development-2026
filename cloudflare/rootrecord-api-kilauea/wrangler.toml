@@ -1,4 +1,8 @@
 # Per-app API Worker (full copy of `rootrecord-primary` source). Same D1 + R2 bindings. No first-party Worker crons for Kīlauea (USGS/device work is in the Android app). `WORKER_SHARD` for clarity only.
+#
+# Production: attach **https://api-kilauea.rootrecord.info** to this Worker (Custom Domains / Routes) for the Kīlauea web app default (`VITE_ROOTRECORD_API_ORIGIN` / hostname detection).
+# SSO cookies require API hosts under `*.rootrecord.info` (see `web-sso.ts`). Until then, set **VITE_ROOTRECORD_API_ORIGIN** on Kīlauea Pages to **https://rootrecord-api-kilauea.rootrecord.workers.dev**.
+#
 # Secrets: JWT_SECRET (set by deploy.ps1 from credentials.env, optional Web/main/.env, and/or gitignored .deploy-* files).
 #
 # Cloudflare account: set CLOUDFLARE_ACCOUNT_ID in repo-root credentials.env (loaded by deploy.ps1), or run `wrangler login`.
@@ -8,6 +12,10 @@ main = "src/index.ts"
 compatibility_date = "2024-11-01"
 # Solana web3 + SPL use Buffer in some paths; required for treasury→custodial txs in this Worker.
 compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+# Explicitly no schedules (Kīlauea ingest is app-driven). Clears any legacy triggers if present.
+crons = []
 
 [[d1_databases]]
 binding = "DB"

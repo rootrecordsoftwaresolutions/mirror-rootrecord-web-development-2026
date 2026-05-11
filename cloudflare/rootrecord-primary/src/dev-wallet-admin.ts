@@ -14,7 +14,7 @@ import {
 
 import { json } from "./cors";
 import { verifyPushAdminKey, verifyWorkerOpsAdmin } from "./push";
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { sessionFromRequest, type AuthEnv } from "./primary-auth";
 import { loadKeypairForAccount, type InternalWalletEnv } from "./solana-internal-wallet";
 
 const ADMIN_EMAIL = "rootrecord@outlook.com";
@@ -31,17 +31,8 @@ function devEnabled(env: DevWalletAdminEnv): boolean {
   return String(env.DEV_WALLET_ADMIN_ENABLED || "").trim() === "1";
 }
 
-function bearerToken(request: Request): string | null {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return null;
-  const t = auth.slice(7).trim();
-  return t ? t : null;
-}
-
 async function requireDevWalletAdmin(env: DevWalletAdminEnv, request: Request) {
-  const tok = bearerToken(request);
-  if (!tok) return { ok: false as const, res: json({ detail: "Unauthorized" }, 401) };
-  const sess = await sessionFromBearer(env, tok);
+  const sess = await sessionFromRequest(env, request);
   if (!sess) return { ok: false as const, res: json({ detail: "Unauthorized" }, 401) };
   const email = String(sess.email || "").trim().toLowerCase();
   if (email !== ADMIN_EMAIL) return { ok: false as const, res: json({ detail: "Forbidden" }, 403) };

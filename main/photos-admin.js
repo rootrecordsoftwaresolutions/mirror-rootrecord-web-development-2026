@@ -42,7 +42,9 @@
   async function apiFetch(base, path, opts) {
     const headers = new Headers(opts?.headers);
     headers.set("X-Guest-Id", getOrCreateDeviceId());
-    return fetch(base + path, { ...opts, headers });
+    const t = getToken();
+    if (t && !headers.has("Authorization")) headers.set("Authorization", "Bearer " + t);
+    return fetch(base + path, { ...opts, headers, credentials: "include" });
   }
 
   function escapeHtml(s) {
@@ -85,8 +87,8 @@
     );
   }
 
-  async function ensureAdminEmail(base, token) {
-    const me = await apiFetch(base, "/v1/auth/me", { headers: { Authorization: "Bearer " + token } });
+  async function ensureAdminEmail(base) {
+    const me = await apiFetch(base, "/v1/me", { method: "GET" });
     if (!me.ok) return { ok: false, detail: "Sign in required." };
     const j = await me.json().catch(() => ({}));
     const email = String(j?.email || "").trim().toLowerCase();
@@ -94,9 +96,8 @@
     return { ok: true, email };
   }
 
-  async function loadPending(base, token) {
+  async function loadPending(base) {
     const res = await apiFetch(base, "/api/photos/admin/pending", {
-      headers: { Authorization: "Bearer " + token },
       cache: "no-store",
     });
     const j = await res.json().catch(() => ({}));
@@ -104,31 +105,30 @@
     return j.items || [];
   }
 
-  async function approve(base, token, id) {
+  async function approve(base, id) {
     const res = await apiFetch(base, "/api/photos/admin/approve/" + encodeURIComponent(id), {
       method: "POST",
-      headers: { Authorization: "Bearer " + token },
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j?.detail || "Approve failed.");
   }
 
-  async function reject(base, token, id) {
+  async function reject(base, id) {
     const reason = prompt("Reject reason (optional):", "");
     const res = await apiFetch(base, "/api/photos/admin/reject/" + encodeURIComponent(id), {
       method: "POST",
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason: reason || "" }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j?.detail || "Reject failed.");
   }
 
-  async function refresh(base, token) {
+  async function refresh(base) {
     setStatus("Loading pending submissions…");
     const wrap = el("pending");
     if (wrap) wrap.innerHTML = "";
-    const items = await loadPending(base, token);
+    const items = await loadPending(base);
     if (!items.length) {
       setStatus("No pending submissions.", "ok");
       return;
@@ -141,22 +141,17 @@
     try {
       const cfg = await loadConfig();
       const base = apiBaseFromConfig(cfg);
-      const token = getToken();
       if (!base) {
         setStatus("API base is unavailable on this site copy.", "warn");
         return;
       }
-      if (!token) {
-        setStatus("Sign in at /account.html first, then return here.", "warn");
-        return;
-      }
-      const admin = await ensureAdminEmail(base, token);
+      const admin = await ensureAdminEmail(base);
       if (!admin.ok) {
         setStatus(admin.detail || "Unauthorized.", "warn");
         return;
       }
 
-      el("btn-refresh")?.addEventListener("click", () => refresh(base, token).catch((e) => setStatus(String(e.message || e), "warn")));
+      el("btn-refresh")?.addEventListener("click", () => refresh(base).catch((e) => setStatus(String(e.message || e), "warn")));
 
       document.addEventListener("click", (ev) => {
         const t = ev.target;
@@ -166,18 +161,18 @@
         if (!action || !id) return;
         ev.preventDefault();
         if (action === "approve") {
-          approve(base, token, id)
-            .then(() => refresh(base, token))
+          approve(base, id)
+            .then(() => refresh(base))
             .catch((e) => setStatus(String(e.message || e), "warn"));
         }
         if (action === "reject") {
-          reject(base, token, id)
-            .then(() => refresh(base, token))
+          reject(base, id)
+            .then(() => refresh(base))
             .catch((e) => setStatus(String(e.message || e), "warn"));
         }
       });
 
-      await refresh(base, token);
+      await refresh(base);
     } catch (e) {
       setStatus(String(e?.message || e), "warn");
     }

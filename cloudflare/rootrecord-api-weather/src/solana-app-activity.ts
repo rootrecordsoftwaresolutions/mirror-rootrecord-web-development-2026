@@ -1,5 +1,5 @@
 import { json } from "./cors";
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest, type AuthEnv } from "./primary-auth";
 import { notifySolanaToolsDiscord } from "./discord-solana-notify";
 
 const MAX_ACTION_LEN = 96;
@@ -63,13 +63,13 @@ export async function handleSolanaAppActivityRoute(
 ): Promise<Response | null> {
   if (sub !== "/solana/activity" || method !== "POST") return null;
 
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) {
-    return json({ detail: "Sign in required." }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json(
+      { detail: extractAuthToken(request) ? "Invalid or expired session." : "Sign in required." },
+      401,
+    );
   }
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Invalid or expired session." }, 401);
 
   let raw: unknown;
   try {

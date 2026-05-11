@@ -1,7 +1,7 @@
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 
 import { json } from "./cors";
-import { sessionFromBearer } from "./primary-auth";
+import { sessionFromRequest } from "./primary-auth";
 import { verifyWorkerOpsAdmin } from "./push";
 
 type PhotoStatus = "pending" | "approved" | "rejected";
@@ -24,13 +24,6 @@ function uuid(): string {
   return `${Date.now()}_${Math.random()}`;
 }
 
-function bearerToken(request: Request): string | null {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return null;
-  const t = auth.slice(7).trim();
-  return t ? t : null;
-}
-
 function clampText(raw: unknown, max = 400): string | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
@@ -39,9 +32,7 @@ function clampText(raw: unknown, max = 400): string | null {
 }
 
 async function requireSession(env: PhotosEnv, request: Request) {
-  const token = bearerToken(request);
-  if (!token) return null;
-  return await sessionFromBearer(env, token);
+  return await sessionFromRequest(env, request);
 }
 
 async function isPhotoAdminByBearer(env: PhotosEnv, request: Request): Promise<boolean> {

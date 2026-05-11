@@ -32,16 +32,15 @@
 
   async function apiFetch(path, opts) {
     const headers = new Headers((opts && opts.headers) || {});
-    return fetch(apiBase + path, { ...(opts || {}), headers });
+    const token = localStorage.getItem(TOKEN_KEY) || "";
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", "Bearer " + token);
+    }
+    return fetch(apiBase + path, { ...(opts || {}), headers, credentials: "include" });
   }
 
   async function requireOwner() {
-    const token = localStorage.getItem(TOKEN_KEY) || "";
-    if (!token) return false;
-    const me = await apiFetch("/v1/auth/me", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + token },
-    });
+    const me = await apiFetch("/v1/me", { method: "GET" });
     if (!me.ok) return false;
     const j = await me.json();
     const email = String(j.email || "").trim().toLowerCase();
@@ -49,10 +48,8 @@
   }
 
   async function loadUsage(days) {
-    const token = localStorage.getItem(TOKEN_KEY) || "";
     const r = await apiFetch(`/api/internal/usage/accuweather?days=${encodeURIComponent(String(days))}`, {
       method: "GET",
-      headers: { Authorization: "Bearer " + token },
     });
     const txt = await r.text();
     let data;

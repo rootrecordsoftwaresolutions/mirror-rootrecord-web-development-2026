@@ -1,4 +1,8 @@
 # Per-app API Worker (full copy of `rootrecord-primary` source). Same D1 + R2 bindings. No first-party crons in this Worker for Business Manager — `WORKER_SHARD` only for logging/routing clarity.
+#
+# Production: attach **https://api-business.rootrecord.info** to this Worker (Custom Domains / Routes).
+# SSO cookies require that API hostname under `*.rootrecord.info` (see `web-sso.ts`). Until then, set **REACT_APP_BACKEND_URL** on Business Pages to **https://rootrecord-api-business.rootrecord.workers.dev**.
+#
 # Secrets: JWT_SECRET (set by deploy.ps1 from credentials.env, optional Web/main/.env, and/or gitignored .deploy-* files).
 #
 # Cloudflare account: set CLOUDFLARE_ACCOUNT_ID in repo-root credentials.env (loaded by deploy.ps1), or run `wrangler login`.
@@ -8,6 +12,10 @@ main = "src/index.ts"
 compatibility_date = "2024-11-01"
 # Solana web3 + SPL use Buffer in some paths; required for treasury→custodial txs in this Worker.
 compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+# Explicitly no schedules (request-driven Business Manager). Clears any legacy triggers if present.
+crons = []
 
 [[d1_databases]]
 binding = "DB"

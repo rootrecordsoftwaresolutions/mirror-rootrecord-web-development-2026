@@ -6,16 +6,16 @@
 # 1. Cloudflare dashboard → Workers & Pages → rootrecord-website → Custom domains → Set up a domain.
 # 2. Enter rootrecord.info (and/or www). Zone must use Cloudflare DNS, or follow the CNAME instructions.
 # 3. If this hostname was used elsewhere, remove it from the old Worker/Pages project first.
-# 4. Primary Worker (ROOTRECORD_API_BASE) uses permissive CORS for /v1/* and /api/* from your site origin.
+# 4. ROOTRECORD_API_BASE targets the **account** API Worker (auth + shared portal routes). CORS allows your Pages origin.
 name = "rootrecord-website"
 compatibility_date = "2024-11-01"
 pages_build_output_dir = "."
 # Set CLOUDFLARE_ACCOUNT_ID in the environment (e.g. credentials.env) when deploying; Pages wrangler.toml does not support account_id.
 
 [vars]
-# Primary Worker origin (no trailing slash): auth + weather API; same D1 as license worker.
-# See credentials.env ROOTRECORD_PRIMARY_API / WEATHER_API_PUBLIC_URL.
-ROOTRECORD_API_BASE = "https://rootrecord-primary.rootrecord.workers.dev"
+# Account API Worker (no trailing slash). Same D1 as other API Workers.
+# For HttpOnly SSO cookies (`Domain=.rootrecord.info`), point this at a ***.rootrecord.info** route on that Worker (not *.workers.dev).
+ROOTRECORD_API_BASE = "https://rootrecord-api-account.rootrecord.workers.dev"
 # Pricing table (Billing page). Publishable key is client-safe; rotate in dashboard if needed.
 STRIPE_PRICING_TABLE_ID = "prctbl_1TQJ0kIaRpbMiAovAUe3X3QJ"
 STRIPE_PUBLISHABLE_KEY = "pk_live_51T3sezIaRpbMiAov6SUJgKLGR1igmRGOYg1rY1hKJPAWxLXDgJR7kRNSBSM8sJ2Wat1zuC56iE4TCTyPfqmEfTT600cR21LwYA"

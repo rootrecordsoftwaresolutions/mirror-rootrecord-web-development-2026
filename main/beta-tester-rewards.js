@@ -51,13 +51,6 @@
   }
 
   async function refreshRewardsBalance() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      showPanel("guest");
-      setStatus("");
-      return;
-    }
-
     showPanel("loading");
     setStatus("");
 
@@ -81,10 +74,14 @@
     }
 
     const path = "/api/earn/summary?app_id=" + encodeURIComponent(BETA_EARN_APP_ID);
+    const headers = new Headers();
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) headers.set("Authorization", "Bearer " + token);
     let res;
     try {
       res = await fetch(apiBase + path, {
-        headers: { Authorization: "Bearer " + token },
+        headers,
+        credentials: "include",
         cache: "no-store",
       });
     } catch {

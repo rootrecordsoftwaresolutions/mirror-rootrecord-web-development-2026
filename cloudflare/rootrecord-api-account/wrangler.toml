@@ -9,9 +9,10 @@ compatibility_date = "2024-11-01"
 # Solana web3 + SPL use Buffer in some paths; required for treasury→custodial txs in this Worker.
 compatibility_flags = ["nodejs_compat"]
 
+# Explicitly no schedules (clears any previously deployed `45 8` on this Worker). Account-wide cron cap is 5;
+# inactive-account cleanup still runs on `rootrecord-primary`. Re-add a schedule here when phasing primary or on a paid plan.
 [triggers]
-# Inactive account purge + worker HTTP error log prune (see inactive-account-cron.ts).
-crons = ["45 8 * * *"]
+crons = []
 
 [[d1_databases]]
 binding = "DB"

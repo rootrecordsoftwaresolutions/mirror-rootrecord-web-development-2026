@@ -17,7 +17,7 @@ import {
 
 import { json } from "./cors";
 import { insertWithdrawalToPersonalLedger } from "./earn-rewards-ledger";
-import { sessionFromBearer } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest } from "./primary-auth";
 import { confirmSignedTxWithPoll, loadKeypairForAccount, type InternalWalletEnv } from "./solana-internal-wallet";
 
 const WITHDRAW_COMPUTE_UNITS = 600_000;
@@ -110,11 +110,10 @@ export async function handleCustodialRrttWithdrawV1(
   method: string,
 ): Promise<Response> {
   if (method !== "POST") return json({ detail: "Method not allowed" }, 405);
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Unauthorized" }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json({ detail: extractAuthToken(request) ? "Unauthorized" : "Missing token" }, 401);
+  }
 
   let body: { amount_whole?: number; destination_pubkey?: string | null };
   try {

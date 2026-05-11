@@ -1,5 +1,5 @@
 import { json } from "./cors";
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest, type AuthEnv } from "./primary-auth";
 
 export type FeedbackEnv = AuthEnv & {
   /** `wrangler secret put DISCORD_FEEDBACK_WEBHOOK_URL` — Discord incoming webhook (https://discord.com/api/webhooks/...). */
@@ -28,11 +28,10 @@ export async function handleFeedbackRoute(
 ): Promise<Response | null> {
   if (sub !== "/feedback" || method !== "POST") return null;
 
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Unauthorized" }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json({ detail: extractAuthToken(request) ? "Unauthorized" : "Missing token" }, 401);
+  }
 
   let body: Record<string, unknown>;
   try {

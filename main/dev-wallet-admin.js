@@ -47,7 +47,7 @@
       if (t) headers.set("Authorization", "Bearer " + t);
     }
     if (!headers.has("Content-Type") && opts?.body) headers.set("Content-Type", "application/json");
-    return fetch(apiUrl(path), { ...opts, headers });
+    return fetch(apiUrl(path), { ...opts, headers, credentials: "include" });
   }
 
   function short(s, n) {

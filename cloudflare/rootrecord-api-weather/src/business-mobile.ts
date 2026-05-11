@@ -4,7 +4,7 @@
  */
 import type { D1Database } from "@cloudflare/workers-types";
 import { json } from "./cors";
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest, type AuthEnv } from "./primary-auth";
 import { fetchBillingSnapshot } from "../../shared/billing-state";
 import { readUserAccountAccessFlags } from "./accounts";
 
@@ -69,18 +69,17 @@ function partsFromSub(sub: string): string[] {
 }
 
 async function requireUserKey(request: Request, env: BusinessEnv): Promise<string | Response> {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) {
-    return json({ detail: "Missing token" }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (sess) {
+    const email = String(sess.email || "")
+      .trim()
+      .toLowerCase();
+    if (email) return `user:${email}`;
   }
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Invalid or expired session." }, 401);
-  const email = String(sess.email || "")
-    .trim()
-    .toLowerCase();
-  if (!email) return json({ detail: "Invalid or expired session." }, 401);
-  return `user:${email}`;
+  if (extractAuthToken(request)) {
+    return json({ detail: "Invalid or expired session." }, 401);
+  }
+  return json({ detail: "Missing token" }, 401);
 }
 
 async function rowGet(db: D1Database, userKey: string, coll: string, id: string): Promise<Record<string, unknown> | null> {
@@ -416,11 +415,10 @@ async function ensureSeed(db: D1Database, userKey: string) {
 }
 
 export async function handleBusinessAuthEntitlement(request: Request, env: BusinessEnv): Promise<Response> {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Unauthorized" }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json({ detail: extractAuthToken(request) ? "Unauthorized" : "Missing token" }, 401);
+  }
   const billing = await fetchBillingSnapshot(env.DB, sess.email);
   const acct = await readUserAccountAccessFlags(env.DB, sess.email);
   const pro = Boolean(billing?.pro_unlocked) || Boolean(acct?.pro_unlocked);

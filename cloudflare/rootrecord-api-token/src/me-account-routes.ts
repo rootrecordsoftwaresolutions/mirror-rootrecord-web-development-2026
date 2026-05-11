@@ -2,11 +2,13 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { json } from "./cors";
 import { resolveUserId } from "./auth";
 import {
-  sessionFromBearer,
+  extractAuthToken,
+  sessionFromRequest,
   issueFreshSessionToken,
   type SessionInsertMeta,
   type AuthEnv,
 } from "./primary-auth";
+import { buildClearSessionCookieHeader, buildSessionCookieHeader, ssoCookieDomainForApiHost } from "./web-sso";
 import {
   hashNewAccountCredentials,
   verifyLicenseAccountPassword,
@@ -19,6 +21,20 @@ export type MeAccountEnv = AuthEnv & {
   RESEND_API_KEY?: string;
   RESEND_FROM?: string;
 };
+
+function ssoClearCookieLine(request: Request): string | undefined {
+  const dom = ssoCookieDomainForApiHost(new URL(request.url).hostname);
+  if (!dom) return undefined;
+  return buildClearSessionCookieHeader(dom);
+}
+
+function ssoSetAccessTokenLine(request: Request, accessToken: string | null | undefined): string | undefined {
+  const t = accessToken?.trim();
+  if (!t) return undefined;
+  const dom = ssoCookieDomainForApiHost(new URL(request.url).hostname);
+  if (!dom) return undefined;
+  return buildSessionCookieHeader(t, dom);
+}
 
 export function buildSessionInsertMeta(request: Request, deviceId: string | null): SessionInsertMeta {
   const ua = (request.headers.get("User-Agent") || "").trim().slice(0, 512) || null;
@@ -185,10 +201,7 @@ async function lastSeenForApp(db: D1Database, userId: string, appId: string): Pr
 }
 
 async function handleMePassword(request: Request, env: MeAccountEnv): Promise<Response> {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
+  const sess = await sessionFromRequest(env, request);
   if (!sess) return json({ detail: "Unauthorized" }, 401);
 
   let body: { current_password?: string; new_password?: string; device_id?: string };
@@ -250,14 +263,16 @@ async function handleMePassword(request: Request, env: MeAccountEnv): Promise<Re
   if (!access_token) {
     return json({ ok: true, detail: "Password updated; sign in again (session issue)." }, 200);
   }
-  return json({ ok: true, access_token, token: access_token }, 200);
+  return json(
+    { ok: true, access_token, token: access_token },
+    200,
+    undefined,
+    ssoSetAccessTokenLine(request, access_token)
+  );
 }
 
 async function handleMeSessionsGet(request: Request, env: MeAccountEnv): Promise<Response> {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
+  const sess = await sessionFromRequest(env, request);
   if (!sess) return json({ detail: "Unauthorized" }, 401);
 
   try {
@@ -293,10 +308,7 @@ async function handleMeSessionsGet(request: Request, env: MeAccountEnv): Promise
 }
 
 async function handleMeSessionRevoke(request: Request, env: MeAccountEnv, sessionId: string): Promise<Response> {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
+  const sess = await sessionFromRequest(env, request);
   if (!sess) return json({ detail: "Unauthorized" }, 401);
 
   const sid = sessionId.trim();
@@ -345,10 +357,7 @@ async function sendResendEmail(env: MeAccountEnv, to: string, subject: string, h
 }
 
 async function handleEmailRequest(request: Request, env: MeAccountEnv): Promise<Response> {
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
+  const sess = await sessionFromRequest(env, request);
   if (!sess) return json({ detail: "Unauthorized" }, 401);
 
   let body: { new_email?: string };
@@ -496,14 +505,10 @@ export async function handleAuthLogout(request: Request, env: MeAccountEnv): Pro
     allDevices = false;
   }
 
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) {
-    return json({ ok: true }, 200);
-  }
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
+  const clearLine = ssoClearCookieLine(request);
+  const sess = await sessionFromRequest(env, request);
   if (!sess) {
-    return json({ ok: true }, 200);
+    return json({ ok: true }, 200, undefined, clearLine);
   }
 
   if (allDevices) {
@@ -520,13 +525,38 @@ export async function handleAuthLogout(request: Request, env: MeAccountEnv): Pro
       n = 0;
     }
     await revokeAllSessions(env.DB, sess.accountId);
-    return json({ ok: true, revoked: n }, 200);
+    return json({ ok: true, revoked: n }, 200, undefined, clearLine);
   }
 
   if (sess.sessionId) {
     await revokeSessionById(env.DB, sess.accountId, sess.sessionId);
   }
-  return json({ ok: true }, 200);
+  return json({ ok: true }, 200, undefined, clearLine);
+}
+
+export async function handleAuthLogoutAll(request: Request, env: MeAccountEnv): Promise<Response> {
+  const clearLine = ssoClearCookieLine(request);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json(
+      { detail: "Unauthorized" },
+      401,
+      undefined,
+      extractAuthToken(request) ? clearLine : undefined
+    );
+  }
+  let n = 0;
+  try {
+    const row = await env.DB
+      .prepare(`SELECT COUNT(*) AS c FROM license_sessions WHERE account_id = ? AND revoked_at IS NULL`)
+      .bind(sess.accountId)
+      .first<{ c: number }>();
+    n = Math.max(0, Number(row?.c) || 0);
+  } catch {
+    n = 0;
+  }
+  await revokeAllSessions(env.DB, sess.accountId);
+  return json({ ok: true, revoked: n }, 200, undefined, clearLine);
 }
 
 export async function handleMeAccountRoutes(

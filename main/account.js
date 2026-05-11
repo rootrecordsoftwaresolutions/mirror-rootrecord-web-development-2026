@@ -117,10 +117,14 @@
       });
     }
     const headers = new Headers(opts?.headers);
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", "Bearer " + token);
+    }
     if (!headers.has("Content-Type") && opts?.body) {
       headers.set("Content-Type", "application/json");
     }
-    return fetch(apiUrl(path), { ...opts, headers });
+    return fetch(apiUrl(path), { ...opts, headers, credentials: "include" });
   }
 
   function showPanel(name) {
@@ -235,12 +239,9 @@
     }
   }
 
-  async function fetchBetaTesterRewardsSummary(token) {
+  async function fetchBetaTesterRewardsSummary() {
     try {
-      const res = await apiFetch(
-        "/api/earn/summary?app_id=" + encodeURIComponent(BETA_EARN_APP_ID),
-        { headers: { Authorization: "Bearer " + token } }
-      );
+      const res = await apiFetch("/api/earn/summary?app_id=" + encodeURIComponent(BETA_EARN_APP_ID), {});
       if (!res.ok) return null;
       const j = await res.json();
       if (j && typeof j === "object") {
@@ -426,21 +427,13 @@
   }
 
   async function refreshMyApps() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      syncPortalLifetimeNav(null);
-      showMyAppsPanel("guest");
-      return;
-    }
     if (!apiBase) {
       showMyAppsPanel("guest");
       return;
     }
     showMyAppsPanel("loading");
     setStatus("");
-    const res = await apiFetch("/v1/me", {
-      headers: { Authorization: "Bearer " + token },
-    });
+    const res = await apiFetch("/v1/me", {});
     if (res.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       syncPortalLifetimeNav(null);
@@ -474,21 +467,13 @@
   }
 
   async function refreshDevNotice() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      syncPortalLifetimeNav(null);
-      showDevNoticePanel("guest");
-      return;
-    }
     if (!apiBase) {
       showDevNoticePanel("guest");
       return;
     }
     showDevNoticePanel("loading");
     setStatus("");
-    const res = await apiFetch("/v1/me", {
-      headers: { Authorization: "Bearer " + token },
-    });
+    const res = await apiFetch("/v1/me", {});
     if (res.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       syncPortalLifetimeNav(null);
@@ -581,21 +566,13 @@
   }
 
   async function refreshMe() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      syncPortalLifetimeNav(null);
-      showPanel("panel-forms");
-      return;
-    }
     if (!apiBase) {
       showPanel("panel-forms");
       return;
     }
     showPanel("panel-loading");
     setStatus("");
-    const res = await apiFetch("/v1/me", {
-      headers: { Authorization: "Bearer " + token },
-    });
+    const res = await apiFetch("/v1/me", {});
     if (res.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       syncPortalLifetimeNav(null);
@@ -610,28 +587,20 @@
       return;
     }
     const data = await res.json();
-    const earn = await fetchBetaTesterRewardsSummary(token);
+    const earn = await fetchBetaTesterRewardsSummary();
     showPanel("panel-account");
     renderAccount(data, earn);
     syncPortalLifetimeNav(data);
   }
 
   async function refreshBilling() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      syncPortalLifetimeNav(null);
-      showBillingPanel("guest");
-      return;
-    }
     if (!apiBase) {
       showBillingPanel("guest");
       return;
     }
     showBillingPanel("loading");
     setStatus("");
-    const res = await apiFetch("/v1/me", {
-      headers: { Authorization: "Bearer " + token },
-    });
+    const res = await apiFetch("/v1/me", {});
     if (res.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       syncPortalLifetimeNav(null);
@@ -737,13 +706,9 @@
   }
 
   async function onLogout() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (token && apiBase) {
+    if (apiBase) {
       try {
-        await apiFetch("/v1/auth/logout", {
-          method: "POST",
-          headers: { Authorization: "Bearer " + token },
-        });
+        await apiFetch("/v1/auth/logout-all", { method: "POST" });
       } catch {
         /* ignore */
       }
@@ -764,12 +729,6 @@
   }
 
   async function onDeleteAccount() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      setStatus("You are not signed in.", "warn");
-      showPanel("panel-forms");
-      return;
-    }
     if (!apiBase) {
       setStatus("Account service is unavailable here. Please try again later.", "warn");
       return;
@@ -790,10 +749,7 @@
     const btn = el("btn-delete-account");
     if (btn) btn.disabled = true;
     try {
-      const res = await apiFetch("/v1/me", {
-        method: "DELETE",
-        headers: { Authorization: "Bearer " + token },
-      });
+      const res = await apiFetch("/v1/me", { method: "DELETE" });
       const { j } = await parseJsonRes(res);
       if (!res.ok) {
         const human = friendlyFromApiError(j) || "Could not delete your account.";
@@ -852,31 +808,19 @@
         setStatus("Checkout was canceled.", "warn");
       }
       el("btn-billing-logout")?.addEventListener("click", onLogout);
-      if (localStorage.getItem(TOKEN_KEY)) {
-        await refreshBilling();
-      } else {
-        showBillingPanel("guest");
-      }
+      await refreshBilling();
       return;
     }
 
     if (page === "my-apps") {
       el("btn-myapps-logout")?.addEventListener("click", onLogout);
-      if (localStorage.getItem(TOKEN_KEY)) {
-        await refreshMyApps();
-      } else {
-        showMyAppsPanel("guest");
-      }
+      await refreshMyApps();
       return;
     }
 
     if (page === "development-notice") {
       el("btn-devnotice-logout")?.addEventListener("click", onLogout);
-      if (localStorage.getItem(TOKEN_KEY)) {
-        await refreshDevNotice();
-      } else {
-        showDevNoticePanel("guest");
-      }
+      await refreshDevNotice();
       return;
     }
 
@@ -893,10 +837,6 @@
     el("btn-logout")?.addEventListener("click", onLogout);
     el("btn-delete-account")?.addEventListener("click", onDeleteAccount);
 
-    if (localStorage.getItem(TOKEN_KEY)) {
-      await refreshMe();
-    } else {
-      showPanel("panel-forms");
-    }
+    await refreshMe();
   });
 })();

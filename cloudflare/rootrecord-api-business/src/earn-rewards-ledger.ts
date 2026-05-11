@@ -1,7 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types";
 
 import { json } from "./cors";
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest, type AuthEnv } from "./primary-auth";
 
 export type LedgerAppRow = { app_id: string; total_units: number };
 export type LedgerAttributed = { app_id: string; units: number };
@@ -126,11 +126,10 @@ export type RewardsLedgerEnv = AuthEnv & { DB: D1Database };
 /** GET `/v1/me/rewards-ledger?limit=&offset=` — Bearer; paginated redemption / transfer history. */
 export async function handleRewardsLedgerV1(request: Request, env: RewardsLedgerEnv, method: string): Promise<Response> {
   if (method !== "GET") return json({ detail: "Method not allowed" }, 405);
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) return json({ detail: "Missing token" }, 401);
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
-  if (!sess) return json({ detail: "Unauthorized" }, 401);
+  const sess = await sessionFromRequest(env, request);
+  if (!sess) {
+    return json({ detail: extractAuthToken(request) ? "Unauthorized" : "Missing token" }, 401);
+  }
 
   const url = new URL(request.url);
   const limit = Math.min(200, Math.max(1, Math.floor(Number(url.searchParams.get("limit")) || 50)));

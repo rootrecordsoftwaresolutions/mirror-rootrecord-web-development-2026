@@ -1,6 +1,7 @@
 import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
 
 import { json } from "./cors";
+import { parseSessionCookie } from "./web-sso";
 
 import {
 
@@ -358,7 +359,23 @@ export async function sessionFromBearer(
 
 }
 
+export function extractAuthToken(request: Request): string | null {
+  const auth = request.headers.get("Authorization") || "";
+  if (auth.toLowerCase().startsWith("bearer ")) {
+    const t = auth.slice(7).trim();
+    if (t) return t;
+  }
+  return parseSessionCookie(request);
+}
 
+export async function sessionFromRequest(
+  env: AuthEnv,
+  request: Request
+): Promise<{ email: string; accountId: string; account_created_at: string | null; sessionId?: string } | null> {
+  const token = extractAuthToken(request);
+  if (!token) return null;
+  return sessionFromBearer(env, token);
+}
 
 export async function authSignup(
   env: AuthEnv,

@@ -4,7 +4,6 @@ import type { Env } from "./router";
 import { handleRequest } from "./router";
 import { runInactiveAccountCleanupCron } from "./inactive-account-cron";
 import { runNoaaAlertCron } from "./noaa-alert-cron";
-import { runRrttCustodialPayoutCron } from "./solana-internal-wallet";
 
 type WorkerShard = "primary" | "weather" | "business" | "account" | "token" | "kilauea";
 
@@ -12,48 +11,6 @@ function workerShard(env: Env): WorkerShard {
   const s = String(env.WORKER_SHARD || "").trim().toLowerCase();
   if (s === "weather" || s === "business" || s === "account" || s === "token" || s === "kilauea") return s;
   return "primary";
-}
-
-/** POST to `rootrecord-solana-tx` (not NOAA). `utcMinute` 0 = SOL LP; 10 = RRTT/RRESERVE + Discord. */
-async function triggerTreasurySolanaTxWorker(env: Env, utcMinute: number): Promise<void> {
-  const base = String(env.ROOTRECORD_SOLANA_TX_URL || "").trim().replace(/\/+$/, "");
-  const secret = String(env.RR_PUSH_ADMIN_SECRET || "").trim();
-  if (!base || !secret) return;
-  const path =
-    utcMinute === 0
-      ? "/internal/run-treasury-sol-lp-check"
-      : utcMinute === 10
-        ? "/internal/run-treasury-liquidity-check"
-        : "";
-  if (!path) return;
-  const url = `${base}/api${path}`;
-  const cron = new Date().toISOString();
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "X-RR-Push-Admin-Key": secret },
-      signal: AbortSignal.timeout(120_000),
-    });
-    const text = await res.text();
-    console.log(
-      JSON.stringify({
-        msg: "solana_tx_worker_trigger",
-        path,
-        status: res.status,
-        body_snip: text.slice(0, 1200),
-        at: cron,
-      }),
-    );
-  } catch (e) {
-    console.error(
-      JSON.stringify({
-        msg: "solana_tx_worker_trigger_err",
-        path,
-        at: cron,
-        err: (e instanceof Error ? e.message : String(e)).slice(0, 500),
-      }),
-    );
-  }
 }
 
 export default {
@@ -93,13 +50,6 @@ export default {
     const c = event.cron || "";
     const shard = workerShard(env);
 
-    if (c === "0 7 * * *") {
-      if (shard === "primary" || shard === "token") {
-        const rrttStats = await runRrttCustodialPayoutCron(env);
-        console.log("rrtt custodial scheduled cron stats", JSON.stringify(rrttStats));
-      }
-      return;
-    }
     if (c === "45 8 * * *") {
       if (shard === "primary" || shard === "account") {
         await runInactiveAccountCleanupCron(env);
@@ -110,23 +60,6 @@ export default {
     if (c === "*/5 * * * *") {
       if (shard === "primary" || shard === "weather") {
         await runNoaaAlertCron(env);
-      }
-      if (shard === "primary" || shard === "token") {
-        const utcMin = new Date(event.scheduledTime).getUTCMinutes();
-        if (utcMin === 0) {
-          ctx.waitUntil(
-            triggerTreasurySolanaTxWorker(env, 0).catch((e) =>
-              console.error("treasury_sol_cron_wait", e instanceof Error ? e.message : String(e)),
-            ),
-          );
-        }
-        if (utcMin === 10) {
-          ctx.waitUntil(
-            triggerTreasurySolanaTxWorker(env, 10).catch((e) =>
-              console.error("treasury_liquidity_cron_wait", e instanceof Error ? e.message : String(e)),
-            ),
-          );
-        }
       }
     }
   },

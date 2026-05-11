@@ -1,4 +1,9 @@
 # Per-app API Worker (full copy of `rootrecord-primary` source). Same D1 + R2 bindings. Cron subset for Weather; see `[triggers]` + `WORKER_SHARD` and `src/index.ts` scheduled().
+#
+# Production: Cloudflare Dashboard → this Worker → Custom Domains (or Routes) so **https://api-weather.rootrecord.info** serves this Worker.
+# Web SSO cookies use `Domain=.rootrecord.info` only when the browser talks to a `*.rootrecord.info` API host (see `web-sso.ts`).
+# Until that hostname resolves, set **REACT_APP_BACKEND_URL** on the Weather Pages project to **https://rootrecord-api-weather.rootrecord.workers.dev** (SSO across subdomains will not work until the custom API host is live).
+#
 # Secrets: JWT_SECRET (set by deploy.ps1 from credentials.env, optional Web/main/.env, and/or gitignored .deploy-* files).
 #
 # Cloudflare account: set CLOUDFLARE_ACCOUNT_ID in repo-root credentials.env (loaded by deploy.ps1), or run `wrangler login`.

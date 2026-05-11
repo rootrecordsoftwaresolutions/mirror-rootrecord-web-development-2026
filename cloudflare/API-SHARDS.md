@@ -53,4 +53,4 @@ When you are ready, add a **Workers Custom Domain** (or zone route) for each Wor
 
 ## Drift / updates
 
-Today, bugfixes and features still land in **`rootrecord-primary`**. When you change primary, **re-copy or merge** into shards until you split codepaths intentionally. Longer term, consider a single package + multiple thin Workers, or service bindings — this layout optimizes for **safe duplication + observability** first.
+**Prefer editing `src/` in `rootrecord-api-*`** for new work, then **copy the same files** to the other shards (and to `rootrecord-primary` only while Android / `api.rootrecord.info` still need identical behavior). Shared pieces include `router.ts`, `primary-auth.ts`, `web-sso.ts`, `cors.ts`, `auth.ts`, `me-account-routes.ts`, and route modules those import. Longer term, consider one shared package + thin Workers — this layout optimizes for **safe duplication + observability** first.

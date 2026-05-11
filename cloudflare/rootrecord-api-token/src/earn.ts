@@ -4,7 +4,7 @@ import { resolveUserId } from "./auth";
 import { getSignupBonusRow, SIGNUP_BONUS_UNITS } from "./earn-signup-bonus";
 import type { CustodialCacheRpcEnv } from "./custodial-onchain-cache";
 import { refreshCustodialOnchainCacheFromRpc } from "./custodial-onchain-cache";
-import { sessionFromBearer } from "./primary-auth";
+import { sessionFromRequest } from "./primary-auth";
 
 export interface EarnEnv {
   DB: D1Database;
@@ -163,9 +163,8 @@ async function earnSummary(request: Request, env: EarnEnv): Promise<Response> {
   let custodial_balances_rpc_ok = false;
   let custodial_sum_ledger_and_wallet_units = 0;
   try {
-    const auth = request.headers.get("Authorization") || "";
-    if (auth.toLowerCase().startsWith("bearer ") && env.JWT_SECRET) {
-      const sess = await sessionFromBearer(env, auth.slice(7).trim());
+    if (env.JWT_SECRET) {
+      const sess = await sessionFromRequest(env, request);
       if (sess) {
         // `/auth/me` refreshes this cache in `waitUntil` (after respond), so mobile often loaded
         // `/earn/summary` before D1 updated. Await one bounded refresh here, then read `rr_earn_custodial_state`.

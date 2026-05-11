@@ -1,19 +1,17 @@
 import { json } from "./cors";
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest, type AuthEnv } from "./primary-auth";
 
 export async function resolveUserId(request: Request, env: AuthEnv): Promise<string | Response> {
-  const auth = request.headers.get("Authorization") || "";
   const guest = request.headers.get("X-Guest-Id") || "";
 
-  if (auth.toLowerCase().startsWith("bearer ")) {
-    const token = auth.slice(7).trim();
-    const sess = await sessionFromBearer(env, token);
-    if (sess) {
-      const email = String(sess.email || "")
-        .trim()
-        .toLowerCase();
-      if (email) return `user:${email}`;
-    }
+  const sess = await sessionFromRequest(env, request);
+  if (sess) {
+    const email = String(sess.email || "")
+      .trim()
+      .toLowerCase();
+    if (email) return `user:${email}`;
+  }
+  if (extractAuthToken(request)) {
     return json({ detail: "Invalid or expired session." }, 401);
   }
   if (guest) {

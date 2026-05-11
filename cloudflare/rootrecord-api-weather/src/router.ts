@@ -1,11 +1,12 @@
 import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
 
-import { cors, json } from "./cors";
+import { bindCorsRequest, cors, json } from "./cors";
 
 import { resolveUserId } from "./auth";
 
-import { authLogin, authMe, authSignup, sessionFromBearer } from "./primary-auth";
-import { buildSessionInsertMeta, handleAuthLogout, handleMeAccountRoutes } from "./me-account-routes";
+import { authLogin, authMe, authSignup, extractAuthToken, sessionFromRequest } from "./primary-auth";
+import { buildSessionCookieHeader, ssoCookieDomainForApiHost } from "./web-sso";
+import { buildSessionInsertMeta, handleAuthLogout, handleAuthLogoutAll, handleMeAccountRoutes } from "./me-account-routes";
 
 import { createStripeSubscriptionCheckout } from "./billing-stripe";
 
@@ -245,28 +246,33 @@ function licenseDeviceId(creds: { device_id?: string }, request: Request): strin
 
 }
 
-
+function webSsoSetCookie(request: Request, token: string | undefined | null): string | undefined {
+  const t = String(token || "").trim();
+  if (!t) return undefined;
+  const dom = ssoCookieDomainForApiHost(new URL(request.url).hostname);
+  if (!dom) return undefined;
+  return buildSessionCookieHeader(t, dom);
+}
 
 export async function handleRequest(
   request: Request,
   env: Env,
   ctx?: ExecutionContext,
 ): Promise<Response> {
-
+  bindCorsRequest(request);
+  try {
   const url = new URL(request.url);
 
   const pathname = normalizePathname(url.pathname);
 
   const method = request.method;
 
-  const h = cors();
-
-
-
   if (method === "OPTIONS") {
-
+    const h = new Headers();
+    for (const [k, v] of Object.entries(cors())) {
+      h.set(k, v);
+    }
     return new Response(null, { status: 204, headers: h });
-
   }
 
 
@@ -301,7 +307,10 @@ export async function handleRequest(
 
           ok: true,
 
-          service: "rootrecord-primary",
+          service: (() => {
+            const shard = String(env.WORKER_SHARD || "").trim().toLowerCase();
+            return shard ? `rootrecord-api-${shard}` : "rootrecord-primary";
+          })(),
 
           site_url: env.SITE_URL,
 
@@ -369,7 +378,8 @@ export async function handleRequest(
 
       }
 
-      return json(data, 200);
+      const v1LoginTok = (data.access_token || data.token) as string | undefined;
+      return json(data, 200, undefined, webSsoSetCookie(request, v1LoginTok));
 
     }
 
@@ -435,21 +445,17 @@ export async function handleRequest(
 
       }
 
-      return json(data, 200);
+      const v1SignupTok = (data.access_token || data.token) as string | undefined;
+      return json(data, 200, undefined, webSsoSetCookie(request, v1SignupTok));
 
     }
 
     if (method === "GET" && pathname === "/v1/me") {
 
-      const auth = request.headers.get("Authorization") || "";
-
-      if (!auth.toLowerCase().startsWith("bearer ")) {
-
+      const tok = extractAuthToken(request);
+      if (!tok) {
         return json({ detail: "Missing token" }, 401);
-
       }
-
-      const tok = auth.slice(7).trim();
 
       return authMe(env, tok, ctx);
 
@@ -487,17 +493,7 @@ export async function handleRequest(
 
     if (method === "DELETE" && pathname === "/v1/me") {
 
-      const auth = request.headers.get("Authorization") || "";
-
-      if (!auth.toLowerCase().startsWith("bearer ")) {
-
-        return json({ detail: "Missing token" }, 401);
-
-      }
-
-      const tok = auth.slice(7).trim();
-
-      const sess = await sessionFromBearer(env, tok);
+      const sess = await sessionFromRequest(env, request);
 
       if (!sess) {
 
@@ -530,19 +526,13 @@ export async function handleRequest(
 
     }
 
+    if (method === "POST" && pathname === "/v1/auth/logout-all") {
+      return handleAuthLogoutAll(request, env);
+    }
+
     if (method === "POST" && pathname === "/v1/billing/checkout") {
 
-      const auth = request.headers.get("Authorization") || "";
-
-      if (!auth.toLowerCase().startsWith("bearer ")) {
-
-        return json({ detail: "Missing token" }, 401);
-
-      }
-
-      const tok = auth.slice(7).trim();
-
-      const sess = await sessionFromBearer(env, tok);
+      const sess = await sessionFromRequest(env, request);
 
       if (!sess) {
 
@@ -773,7 +763,11 @@ export async function handleRequest(
 
       },
 
-      200
+      200,
+
+      undefined,
+
+      webSsoSetCookie(request, token)
 
     );
 
@@ -873,7 +867,11 @@ export async function handleRequest(
 
       },
 
-      200
+      200,
+
+      undefined,
+
+      webSsoSetCookie(request, token)
 
     );
 
@@ -883,15 +881,10 @@ export async function handleRequest(
 
   if ((method === "GET" || method === "POST") && sub === "/auth/me") {
 
-    const auth = request.headers.get("Authorization") || "";
-
-    if (!auth.toLowerCase().startsWith("bearer ")) {
-
+    const token = extractAuthToken(request);
+    if (!token) {
       return json({ detail: "Missing token" }, 401);
-
     }
-
-    const token = auth.slice(7).trim();
 
     const res = await authMe(env, token, ctx);
 
@@ -955,6 +948,9 @@ export async function handleRequest(
 
         access: data.access,
 
+        access_token: token,
+        token,
+
         raw: data,
 
       },
@@ -967,6 +963,10 @@ export async function handleRequest(
 
   if (method === "POST" && sub === "/auth/logout") {
     return handleAuthLogout(request, env);
+  }
+
+  if (method === "POST" && sub === "/auth/logout-all") {
+    return handleAuthLogoutAll(request, env);
   }
 
   const meAccountRes = await handleMeAccountRoutes(request, env, sub, method);
@@ -1235,5 +1235,8 @@ export async function handleRequest(
 
   return json({ detail: "Not Found" }, 404);
 
+  } finally {
+    bindCorsRequest(undefined);
+  }
 }
 

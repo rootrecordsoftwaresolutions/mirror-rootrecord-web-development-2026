@@ -10,8 +10,8 @@ compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-# `*/5` = NOAA + UTC :00 → SOL LP + :10 → RRTT/RRESERVE (solana-tx). Daily RRTT 07:00; inactive purge 08:45.
-crons = ["*/5 * * * *", "0 7 * * *", "45 8 * * *"]
+# `*/5` = Weather Manager NOAA/NWS path only. `45 8` = inactive portal cleanup + HTTP error log prune. No Solana crons.
+crons = ["*/5 * * * *", "45 8 * * *"]
 
 [[d1_databases]]
 binding = "DB"
@@ -93,9 +93,9 @@ PLAY_STORE_URL_ACCOUNT_HUB = "https://play.google.com/store/apps/details?id=com.
 
 # One-time / ops: provision custodial wallets for all `license_accounts` missing `internal_solana_wallets`
 # (POST /api/internal/provision-custodial-wallets-missing, same X-RR-Push-Admin-Key as push-broadcast).
-# Run treasury SOL top-up + RRTT payout cron immediately (same as 07:00 UTC schedule):
+# Run treasury SOL top-up + RRTT payout manually (no scheduled Worker cron):
 #   POST https://api.rootrecord.info/api/internal/run-rrtt-custodial-cron  (header X-RR-Push-Admin-Key: …)
-# Treasury checks (proxied to `ROOTRECORD_SOLANA_TX_URL`; schedules: SOL :00 UTC, RRTT/RRESERVE :10 UTC, both from `*/5`):
+# Treasury checks (proxied to `ROOTRECORD_SOLANA_TX_URL`; no Cloudflare cron — invoke when needed):
 #   POST https://api.rootrecord.info/api/internal/run-treasury-liquidity-check
 #   POST https://api.rootrecord.info/api/internal/run-treasury-sol-lp-check
 #   Header: X-RR-Push-Admin-Key (same as push-broadcast). Or call the solana-tx Worker `/api/internal/...` directly.

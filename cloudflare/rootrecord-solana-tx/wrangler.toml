@@ -1,5 +1,5 @@
 # Dedicated Worker: treasury Raydium LP maintenance (SOL + RRTT/RRESERVE) + Discord → D1 developer_messages.
-# Invoked by rootrecord-primary: UTC :00 SOL LP, :10 RRTT/RRESERVE (both on primary `*/5` — not NOAA).
+# No Cloudflare cron on this Worker; call `/api/internal/...` manually or from your own scheduler if needed.
 # Secrets: RRTT_TREASURY_SECRET_KEY_B58, RR_PUSH_ADMIN_SECRET, SOLANA_RPC_URL (recommended), DISCORD_BOT_TOKEN,
 #   DISCORD_WEBHOOK_SOLANA_TOOLS, TREASURY_MAINTENANCE_SOURCE_SECRET_KEY_B58 (optional).
 # Deploy: .\deploy.ps1 (loads repo-root credentials.env.txt then Web/credentials.env).

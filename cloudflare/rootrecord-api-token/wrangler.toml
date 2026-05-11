@@ -1,4 +1,4 @@
-# Per-app API Worker (full copy of `rootrecord-primary` source). Same D1 + R2 bindings. Cron subset for Token Manager / RRTT + treasury hooks; see `[triggers]` + `WORKER_SHARD`.
+# Per-app API Worker (full copy of `rootrecord-primary` source). Same D1 + R2 bindings. No Cloudflare schedules (non-crypto SaaS focus); see `[triggers]` + `WORKER_SHARD`.
 # Secrets: JWT_SECRET (set by deploy.ps1 from credentials.env, optional Web/main/.env, and/or gitignored .deploy-* files).
 #
 # Cloudflare account: set CLOUDFLARE_ACCOUNT_ID in repo-root credentials.env (loaded by deploy.ps1), or run `wrangler login`.
@@ -10,8 +10,8 @@ compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-# Daily RRTT custodial payout (07:00 UTC) + five-minute treasury triggers to `rootrecord-solana-tx` (:00 SOL LP, :10 liquidity).
-crons = ["*/5 * * * *", "0 7 * * *"]
+# Clears any previously deployed schedules. Token/Solana automation is not driven by Worker crons in this setup.
+crons = []
 
 [[d1_databases]]
 binding = "DB"

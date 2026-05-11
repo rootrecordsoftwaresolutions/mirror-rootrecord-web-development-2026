@@ -2,7 +2,7 @@ import bs58 from "bs58";
 
 import { json } from "./cors";
 
-import { sessionFromBearer, type AuthEnv } from "./primary-auth";
+import { extractAuthToken, sessionFromRequest, type AuthEnv } from "./primary-auth";
 
 /** First line must match client (`portalAccountApi` / AccountPageClient). */
 export const SOLANA_LINK_WALLET_MESSAGE_PREFIX = "RootRecord account wallet link";
@@ -62,14 +62,9 @@ async function handleSolanaLinkedWalletRouteImpl(
     return json({ detail: "Method not allowed" }, 405);
   }
 
-  const auth = request.headers.get("Authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ")) {
-    return json({ detail: "Missing token" }, 401);
-  }
-  const token = auth.slice(7).trim();
-  const sess = await sessionFromBearer(env, token);
+  const sess = await sessionFromRequest(env, request);
   if (!sess) {
-    return json({ detail: "Unauthorized" }, 401);
+    return json({ detail: extractAuthToken(request) ? "Unauthorized" : "Missing token" }, 401);
   }
 
   if (method === "GET") {

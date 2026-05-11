@@ -1,15 +1,44 @@
 (function () {
   const TOKEN_KEY = "rootrecord_portal_token";
   const LIFETIME_NAV_KEY = "rootrecord_portal_lifetime_nav";
+  /** Set when /v1/me succeeds with HttpOnly cookie (no localStorage JWT). Cleared on auth-change. */
+  const WEB_AUTH_HINT = "data-rootrecord-web-auth";
+
+  function clearWebSessionHint() {
+    document.documentElement.removeAttribute(WEB_AUTH_HINT);
+  }
+
+  function navSignedInFromStorage() {
+    return !!localStorage.getItem(TOKEN_KEY) || document.documentElement.getAttribute(WEB_AUTH_HINT) === "1";
+  }
 
   function syncNavSignedIn() {
-    document.documentElement.classList.toggle("nav-signed-in", !!localStorage.getItem(TOKEN_KEY));
+    document.documentElement.classList.toggle("nav-signed-in", navSignedInFromStorage());
   }
 
   function syncLifetimeNav() {
-    const signedIn = !!localStorage.getItem(TOKEN_KEY);
+    const signedIn = navSignedInFromStorage();
     const lifetime = signedIn && localStorage.getItem(LIFETIME_NAV_KEY) === "1";
     document.documentElement.classList.toggle("nav-lifetime", lifetime);
+  }
+
+  async function probeWebSession() {
+    if (localStorage.getItem(TOKEN_KEY)) return;
+    try {
+      const res = await fetch("/v1/me", { method: "GET", credentials: "include", cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      const email = data && typeof data === "object" ? String(data.email || "").trim() : "";
+      if (!email) return;
+      document.documentElement.setAttribute(WEB_AUTH_HINT, "1");
+      if (data.life_member || data.lifeMember) {
+        localStorage.setItem(LIFETIME_NAV_KEY, "1");
+      } else {
+        localStorage.removeItem(LIFETIME_NAV_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   function closeAccountPanel() {
@@ -58,6 +87,10 @@
     syncNavSignedIn();
     syncLifetimeNav();
     ensureFooterTesterRewardsLink();
+    void probeWebSession().then(() => {
+      syncNavSignedIn();
+      syncLifetimeNav();
+    });
 
     window.addEventListener("storage", (e) => {
       if (e.key === TOKEN_KEY) {
@@ -67,8 +100,13 @@
       if (e.key === LIFETIME_NAV_KEY) syncLifetimeNav();
     });
     window.addEventListener("rootrecord-portal-auth-change", () => {
+      clearWebSessionHint();
       syncNavSignedIn();
       syncLifetimeNav();
+      void probeWebSession().then(() => {
+        syncNavSignedIn();
+        syncLifetimeNav();
+      });
     });
     window.addEventListener("rootrecord-portal-lifetime-nav-change", syncLifetimeNav);
 
